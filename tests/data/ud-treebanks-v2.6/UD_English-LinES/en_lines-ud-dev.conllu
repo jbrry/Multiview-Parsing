@@ -1,0 +1,163 @@
+# newdoc docid = 1
+# sent_id = en_lines-ud-dev-doc1-3177
+# text = When a user connects to the SQL Server database through a Microsoft Access project, the connection is enabled through a Windows NT user account.
+1	When	when	SCONJ	_	Case=Nom	4	mark	_	_
+2	a	a	DET	IND-SG	Definite=Ind|PronType=Art	3	det	_	_
+3	user	user	NOUN	SG-NOM	Number=Sing	4	nsubj	_	_
+4	connects	connect	VERB	PRES	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	19	advcl	_	_
+5	to	to	ADP	_	_	9	case	_	_
+6	the	the	DET	DEF	Definite=Def|PronType=Art	9	det	_	_
+7	SQL	SQL	PROPN	SG-NOM	Number=Sing	9	compound	_	_
+8	Server	server	NOUN	SG-NOM	Number=Sing	7	flat	_	_
+9	database	database	NOUN	SG-NOM	Number=Sing	4	obl	_	_
+10	through	through	ADP	_	_	14	case	_	_
+11	a	a	DET	IND-SG	Definite=Ind|PronType=Art	14	det	_	_
+12	Microsoft	Microsoft	PROPN	SG-NOM	Number=Sing	14	compound	_	_
+13	Access	Access	PROPN	SG-NOM	Case=Nom	12	flat	_	_
+14	project	project	NOUN	SG-NOM	Number=Sing	9	nmod	_	SpaceAfter=No
+15	,	,	PUNCT	Comma	_	4	punct	_	_
+16	the	the	DET	DEF	Definite=Def|PronType=Art	17	det	_	_
+17	connection	connection	NOUN	SG-NOM	Number=Sing	19	nsubj:pass	_	_
+18	is	be	AUX	PRES-AUX	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	19	aux:pass	_	_
+19	enabled	enable	VERB	PASS	Tense=Past|VerbForm=Part|Voice=Pass	0	root	_	_
+20	through	through	ADP	_	_	25	case	_	_
+21	a	a	DET	IND-SG	Definite=Ind|PronType=Art	25	det	_	_
+22	Windows	Windows	PROPN	SG-NOM	Case=Nom	25	compound	_	_
+23	NT	NT	PROPN	SG-NOM	Case=Nom	22	flat	_	_
+24	user	user	NOUN	SG-NOM	Number=Sing	25	compound	_	_
+25	account	account	NOUN	SG-NOM	Number=Sing	19	obl	_	SpaceAfter=No
+26	.	.	PUNCT	Period	_	19	punct	_	_
+
+# sent_id = en_lines-ud-dev-doc1-3178
+# text = SQL Server verifies that the account name and password were validated when the user logged on to the system and grants access to the database, without requiring a separate logon name or password.
+1	SQL	SQL	PROPN	SG-NOM	Number=Sing	3	nsubj	_	_
+2	Server	server	NOUN	SG-NOM	Number=Sing	1	flat	_	_
+3	verifies	verify	VERB	PRES	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	0	root	_	_
+4	that	that	SCONJ	_	_	11	mark	_	_
+5	the	the	DET	DEF	Definite=Def|PronType=Art	7	det	_	_
+6	account	account	NOUN	SG-NOM	Number=Sing	7	compound	_	_
+7	name	name	NOUN	SG-NOM	Number=Sing	11	nsubj:pass	_	_
+8	and	and	CCONJ	_	_	9	cc	_	_
+9	password	password	NOUN	SG-NOM	Number=Sing	7	conj	_	_
+10	were	be	AUX	PAST	Mood=Ind|Tense=Past|VerbForm=Fin	11	aux:pass	_	_
+11	validated	validate	VERB	PASS	Tense=Past|VerbForm=Part|Voice=Pass	3	ccomp	_	_
+12	when	when	SCONJ	_	Case=Nom	15	mark	_	_
+13	the	the	DET	DEF	Definite=Def|PronType=Art	14	det	_	_
+14	user	user	NOUN	SG-NOM	Number=Sing	15	nsubj	_	_
+15	logged	log	VERB	PAST	Mood=Ind|Tense=Past|VerbForm=Fin	3	advcl	_	_
+16	on	on	ADV	_	_	15	compound:prt	_	_
+17	to	to	ADP	_	_	19	case	_	_
+18	the	the	DET	DEF	Definite=Def|PronType=Art	22	det	_	_
+19	system	system	NOUN	SG-NOM	Number=Sing	15	obl	_	_
+20	and	and	CCONJ	_	_	21	cc	_	_
+21	grants	grant	VERB	PRES	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	15	conj	_	_
+22	access	access	NOUN	SG-NOM	Number=Sing	21	obj	_	_
+23	to	to	ADP	_	_	25	case	_	_
+24	the	the	DET	DEF	Definite=Def|PronType=Art	25	det	_	_
+25	database	database	NOUN	SG-NOM	Number=Sing	22	nmod	_	SpaceAfter=No
+26	,	,	PUNCT	Comma	_	28	punct	_	_
+27	without	without	ADP	_	_	28	mark	_	_
+28	requiring	require	VERB	ING	Tense=Pres|VerbForm=Part	21	advcl	_	_
+29	a	a	DET	IND-SG	Definite=Ind|PronType=Art	32	det	_	_
+30	separate	separate	ADJ	POS	Degree=Pos	31	amod	_	_
+31	logon	logon	NOUN	SG-NOM	Number=Sing	32	compound	_	_
+32	name	name	NOUN	SG-NOM	Number=Sing	28	obj	_	_
+33	or	or	CCONJ	_	_	34	cc	_	_
+34	password	password	NOUN	SG-NOM	Number=Sing	32	conj	_	SpaceAfter=No
+35	.	.	PUNCT	Period	_	3	punct	_	_
+
+# sent_id = en_lines-ud-dev-doc1-3179
+# text = With the default installation of the Microsoft SQL Server 2000 Desktop Engine with integrated security, the user must be a member of the administrator group for the machine on which the Access project resides.
+1	With	with	ADP	_	_	4	case	_	_
+2	the	the	DET	DEF	Definite=Def|PronType=Art	4	det	_	_
+3	default	default	NOUN	SG-NOM	Number=Sing	4	compound	_	_
+4	installation	installation	NOUN	SG-NOM	Number=Sing	22	nmod	_	_
+5	of	of	ADP	_	_	12	case	_	_
+6	the	the	DET	DEF	Definite=Def|PronType=Art	9	det	_	_
+7	Microsoft	Microsoft	PROPN	SG-NOM	Number=Sing	12	compound	_	_
+8	SQL	SQL	PROPN	SG-NOM	Number=Sing	7	flat	_	_
+9	Server	server	NOUN	SG-NOM	Number=Sing	7	flat	_	_
+10	2000	2000	NUM	ID	NumType=Card	7	nummod	_	_
+11	Desktop	desktop	NOUN	SG-NOM	Number=Sing	12	compound	_	_
+12	Engine	engine	NOUN	SG-NOM	Number=Sing	4	nmod	_	_
+13	with	with	ADP	_	_	15	case	_	_
+14	integrated	integrate	ADJ	PASS	Degree=Pos	15	amod	_	_
+15	security	security	NOUN	SG-NOM	Number=Sing	12	nmod	_	SpaceAfter=No
+16	,	,	PUNCT	Comma	_	4	punct	_	_
+17	the	the	DET	DEF	Definite=Def|PronType=Art	18	det	_	_
+18	user	user	NOUN	SG-NOM	Number=Sing	22	nsubj	_	_
+19	must	must	AUX	PRES-AUX	VerbForm=Fin	22	aux	_	_
+20	be	be	AUX	INF	VerbForm=Inf	22	cop	_	_
+21	a	a	DET	IND-SG	Definite=Ind|PronType=Art	22	det	_	_
+22	member	member	NOUN	SG-NOM	Number=Sing	0	root	_	_
+23	of	of	ADP	_	_	26	case	_	_
+24	the	the	DET	DEF	Definite=Def|PronType=Art	26	det	_	_
+25	administrator	administrator	NOUN	SG-NOM	Number=Sing	26	compound	_	_
+26	group	group	NOUN	SG-NOM	Number=Sing	22	nmod	_	_
+27	for	for	ADP	_	_	29	case	_	_
+28	the	the	DET	DEF	Definite=Def|PronType=Art	29	det	_	_
+29	machine	machine	NOUN	SG-NOM	Number=Sing	26	nmod	_	_
+30	on	on	ADP	_	_	31	case	_	_
+31	which	which	PRON	WH-REL	PronType=Int	35	obl	_	_
+32	the	the	DET	DEF	Definite=Def|PronType=Art	34	det	_	_
+33	Access	Access	PROPN	SG-NOM	Case=Nom	34	compound	_	_
+34	project	project	NOUN	SG-NOM	Number=Sing	35	nsubj	_	_
+35	resides	reside	VERB	PRES	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	29	acl:relcl	_	SpaceAfter=No
+36	.	.	PUNCT	Period	_	22	punct	_	_
+
+# sent_id = en_lines-ud-dev-doc1-3180
+# text = This makes it difficult to allow other users to gain access to the Access project.
+1	This	this	PRON	DEM-SG	Number=Sing|PronType=Dem	2	nsubj	_	_
+2	makes	make	VERB	PRES	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	0	root	_	_
+3	it	it	PRON	PERS-SG	_	2	obj	_	_
+4	difficult	difficult	ADJ	POS	Degree=Pos	2	xcomp	_	_
+5	to	to	PART	_	_	6	mark	_	_
+6	allow	allow	VERB	INF	VerbForm=Inf	3	acl	_	_
+7	other	other	ADJ	POS	Degree=Pos	8	amod	_	_
+8	users	user	NOUN	PL-NOM	Number=Plur	10	nsubj	_	_
+9	to	to	PART	_	_	10	mark	_	_
+10	gain	gain	VERB	INF	VerbForm=Inf	6	ccomp	_	_
+11	access	access	NOUN	SG-NOM	Number=Sing	10	obj	_	_
+12	to	to	ADP	_	_	15	case	_	_
+13	the	the	DET	DEF	Definite=Def|PronType=Art	15	det	_	_
+14	Access	Access	PROPN	SG-NOM	Case=Nom	15	compound	_	_
+15	project	project	NOUN	SG-NOM	Number=Sing	10	obl	_	SpaceAfter=No
+16	.	.	PUNCT	Period	_	2	punct	_	_
+
+# sent_id = en_lines-ud-dev-doc1-3181
+# text = There is currently no simple way for the system administrator to create new logon accounts to the locally installed SQL Server database except by using SQL Tools or Transact-SQL (TSQL) commands.
+1	There	there	PRON	EX	_	2	expl	_	_
+2	is	be	VERB	PRES	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	0	root	_	_
+3	currently	currently	ADV	_	_	2	advmod	_	_
+4	no	no	DET	NEG	_	6	det	_	_
+5	simple	simple	ADJ	POS	Degree=Pos	6	amod	_	_
+6	way	way	NOUN	SG-NOM	Number=Sing	2	nsubj	_	_
+7	for	for	ADP	_	_	10	case	_	_
+8	the	the	DET	DEF	Definite=Def|PronType=Art	10	det	_	_
+9	system	system	NOUN	SG-NOM	Number=Sing	10	compound	_	_
+10	administrator	administrator	NOUN	SG-NOM	Number=Sing	6	nmod	_	_
+11	to	to	PART	_	_	12	mark	_	_
+12	create	create	VERB	INF	VerbForm=Inf	6	acl	_	_
+13	new	new	ADJ	POS	Degree=Pos	15	amod	_	_
+14	logon	logon	NOUN	SG-NOM	Number=Sing	15	compound	_	_
+15	accounts	account	VERB	PRES	Case=Nom	12	obj	_	_
+16	to	to	ADP	_	_	22	case	_	_
+17	the	the	DET	DEF	Definite=Def|PronType=Art	22	det	_	_
+18	locally	locally	ADV	_	_	19	advmod	_	_
+19	installed	install	ADJ	PASS	Case=Nom	22	amod	_	_
+20	SQL	SQL	PROPN	SG-NOM	Number=Sing	22	compound	_	_
+21	Server	server	NOUN	SG-NOM	Number=Sing	20	flat	_	_
+22	database	database	NOUN	SG-NOM	Number=Sing	12	obl	_	_
+23	except	except	ADP	_	_	25	mark	_	_
+24	by	by	ADP	_	_	25	mark	_	_
+25	using	use	VERB	ING	Tense=Pres|VerbForm=Part	6	acl	_	_
+26	SQL	SQL	PROPN	SG-NOM	Number=Sing	33	compound	_	_
+27	Tools	tool	NOUN	PL-NOM	Number=Plur	26	flat	_	_
+28	or	or	CCONJ	_	_	29	cc	_	_
+29	Transact-SQL	Transact-sql	PROPN	SG-NOM	Number=Sing	26	conj	_	_
+30	(	(	PUNCT	LeftParenthesis	_	31	punct	_	SpaceAfter=No
+31	TSQL	Tsql	PROPN	SG-NOM	Number=Sing	29	appos	_	SpaceAfter=No
+32	)	)	PUNCT	RightParenthesis	_	31	punct	_	_
+33	commands	command	NOUN	PL-NOM	Number=Plur	25	obj	_	SpaceAfter=No
+34	.	.	PUNCT	Period	_	2	punct	_	_
+
