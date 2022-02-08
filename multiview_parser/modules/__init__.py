@@ -1,0 +1,1 @@
+from multiview_parser.modules.cross_stitch import CrossStitchBlock
