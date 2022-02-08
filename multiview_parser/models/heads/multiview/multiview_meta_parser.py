@@ -33,6 +33,8 @@ from allennlp.nn.util import (
 from allennlp.nn.chu_liu_edmonds import decode_mst
 from allennlp.training.metrics import AttachmentScores
 
+from multiview_parser.modules import CrossStitchBlock
+
 logger = logging.getLogger(__name__)
 
 POS_TO_IGNORE = {"`", "''", ":", ",", ".", "PU", "PUNCT", "SYM"}
@@ -46,9 +48,12 @@ class MultiviewMetaParserHead(Head):
         self,
         vocab: Vocabulary,
         meta_encoder: Seq2SeqEncoder,
-        # encoder_dim: int,
         tag_representation_dim: int,
         arc_representation_dim: int,
+        first_encoded_text_source: str,
+        second_encoded_text_source: str,
+        num_tasks: int = 2,
+        num_subspaces: int = 2,
         tag_feedforward: FeedForward = None,
         arc_feedforward: FeedForward = None,
         pos_tag_embedding: Embedding = None,
@@ -74,6 +79,8 @@ class MultiviewMetaParserHead(Head):
             arc_representation_dim, arc_representation_dim, use_input_biases=True
         )
 
+        self.cross_stitch = CrossStitchBlock(num_tasks, num_subspaces)
+
         num_labels = self.vocab.get_vocab_size("head_tags")
 
         self.head_tag_feedforward = tag_feedforward or FeedForward(
@@ -88,6 +95,8 @@ class MultiviewMetaParserHead(Head):
             tag_representation_dim, tag_representation_dim, num_labels
         )
 
+        self._first_encoded_text_source = first_encoded_text_source
+        self._second_encoded_text_source = second_encoded_text_source
         self._pos_tag_embedding = pos_tag_embedding or None
         self._dropout = InputVariationalDropout(dropout)
         self._head_sentinel = torch.nn.Parameter(
@@ -141,14 +150,14 @@ class MultiviewMetaParserHead(Head):
         head_indices: torch.LongTensor = None,
     ) -> Dict[str, torch.Tensor]:
 
-        multi_encoded_text = encoded_text["multi_encoded_text"]
-        mono_encoded_text = encoded_text["mono_encoded_text"]
+        first_view_encoded_text = encoded_text[self._first_encoded_text_source]
+        second_view_encoded_text = encoded_text[self._second_encoded_text_source]
 
         batch_task = task[0]
 
         predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll = self._parse(
-            multi_encoded_text,
-            mono_encoded_text,
+            first_view_encoded_text,
+            second_view_encoded_text,
             mask,
             upos_encoded_representation,
             xpos_encoded_representation,
@@ -232,61 +241,10 @@ class MultiviewMetaParserHead(Head):
         output_dict["predicted_heads"] = head_indices
         return output_dict
 
-    def _cross_stitch(self, inputs):
-        """
-        Cross stitch layer which calculates a linear combination between input tasks.
-        # Parameters
-        inputs : `List[torch.Tensor]`, required.
-            A list of Tensor objects, where each Tensor object is the output of a certain layer
-            for a certain task with shape (batch_size, sequence_length, hidden_dum).
-            The length of the list is equal to the number of tasks and will decide the size of the cross-stitch kernel.
-
-        # Returns
-        outputs : `List[torch.Tensor]`, required.
-            List of length of the number of tasks containing the linear combination of
-            predictions for each task. E.g. for 2 tasks, a list containing 2 lists.
-        """
-
-        stitch_shape = len(inputs)
-
-        # initialize using random uniform distribution as suggested in section 5.1
-        self.cross_stitch_kernel = (
-            torch.FloatTensor(stitch_shape, stitch_shape)
-            .uniform_(0.0, 1.0)
-            .to(inputs[0].device)
-        )
-
-        # normalize, so that each row will be convex linear combination,
-        # here we follow recommendation in paper (see section 5.1 )
-        normalizer = torch.sum(self.cross_stitch_kernel, 0, keepdim=True)
-        self.cross_stitch_kernel = self.cross_stitch_kernel / normalizer
-
-        # concatenate each element of the input for each task
-        # this will contain the nth element of each task
-        x = torch.cat([torch.unsqueeze(i, -1) for i in inputs], -1)
-
-        # multiply every element of the input with the cross-stitch kernel
-        stitched_output = torch.matmul(x, self.cross_stitch_kernel)
-
-        n, batch, seq, d = x.size()
-        # index need to be of the same dimension size as source tensor
-        index = torch.zeros(n, batch, seq, 1, dtype=torch.int64).to(inputs[0].device)
-
-        # split result into tensors corresponding to specific tasks and return
-        # to task-specific lists
-        outputs = [
-            torch.flatten(torch.gather(e, dim=-1, index=index), start_dim=2)
-            for e in torch.split(stitched_output, 1, -1)
-        ]
-
-        assert len(outputs) == stitch_shape
-
-        return outputs
-
     def _parse(
         self,
-        multi_encoded_text: torch.Tensor,
-        mono_encoded_text: torch.Tensor,
+        first_view_encoded_text: torch.Tensor,
+        second_view_encoded_text: torch.Tensor,
         mask: torch.BoolTensor,
         upos_encoded_representation: torch.FloatTensor = None,
         xpos_encoded_representation: torch.FloatTensor = None,
@@ -296,13 +254,14 @@ class MultiviewMetaParserHead(Head):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
         if self.use_cross_stitch:
-            cross_stitch_inputs = [multi_encoded_text, mono_encoded_text]
-            cross_stitch_outputs = self._cross_stitch(cross_stitch_inputs)
+            # pass output of different tasks to cross-stitch block
+            cross_stitch_inputs = [first_view_encoded_text, second_view_encoded_text]
+            cross_stitch_outputs = self.cross_stitch(cross_stitch_inputs)
             # unpack cross-stitched output to be passed to subsequent layer
-            stitched_multi_encoded_text, stitched_mono_encoded_text = cross_stitch_outputs
-            inputs = torch.cat([stitched_multi_encoded_text, stitched_mono_encoded_text], -1)
+            stitched_first_view_encoded_text, stitched_second_view_encoded_text = cross_stitch_outputs
+            inputs = torch.cat([stitched_first_view_encoded_text, stitched_second_view_encoded_text], -1)
         else:
-            inputs = torch.cat([multi_encoded_text, mono_encoded_text], -1)
+            inputs = torch.cat([first_view_encoded_text, second_view_encoded_text], -1)
         # inputs = self._dropout(inputs)
 
         # Pass inputs to the encoder
