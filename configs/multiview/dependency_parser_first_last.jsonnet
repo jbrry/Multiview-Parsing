@@ -5,18 +5,17 @@ local encoder_dim = transformer_dim;
 
 local batch_size = 8;
 
-// the pretrained transformer is common to all readers
 local reader_common = {
-  "multi_token_indexers": {
+  "token_indexers": {
     "tokens": {
       "type": "pretrained_transformer_mismatched",
       "model_name": transformer_model,
       "max_length": max_length,
       "tokenizer_kwargs": {
-        "do_lower_case": false,
-        "tokenize_chinese_chars": true, // true for mbert
-        "strip_accents": false,
-        "clean_text": true,
+          "do_lower_case": false,
+          "tokenize_chinese_chars": true, // true for mbert
+          "strip_accents": false,
+          "clean_text": true,
       }
     }
   }
@@ -27,111 +26,80 @@ local reader_common = {
     "type": "multitask",
     "readers": {
       "TBID_PLACEHOLDER": reader_common {
-        "type": "universal_dependencies_multi",
-          "mono_token_character_indexers" : {
-            "token_characters" : {
-              "type": "characters",
-              "namespace": "PLACEHOLDER_token_character_vocab",
-            }
-          },   
+        "type": "universal_dependencies_all_features",
       }
     }
   },
 
   "train_data_path": {
-    "TBID_PLACEHOLDER": "_",
+    TBID_PLACEHOLDER: std.extVar("TRAIN_DATA_PATH"),
   },
   "validation_data_path": {
-    "TBID_PLACEHOLDER": "_",
+    TBID_PLACEHOLDER: std.extVar("DEV_DATA_PATH"),
   },
   "test_data_path": {
-    "TBID_PLACEHOLDER": "_",
+    TBID_PLACEHOLDER: std.extVar("TEST_DATA_PATH"),
   },
 
   "model": {
     "type": "multitask_v2",
     "multiple_heads_one_data_source": true,
-    "desired_order_of_heads" : ["multi_dependencies", "mono_dependencies", "meta_dependencies"],
+    "desired_order_of_heads" : ["first_dependencies", "last_dependencies", "meta_dependencies"],
     "backbone": {
-      "type": "multiview",
-        "multi_embedder": {
+      "type": "first_last",
+        "first_last_embedder": {
           "token_embedders": {          
             "tokens": {
-              "type": "pretrained_transformer_mismatched",
+              "type": "pretrained_transformer_mismatched_first_last",
               "model_name": transformer_model,
-              "max_length": max_length
+              "max_length": max_length,
+              "sub_token_mode": "first_last",
             }
           }
         },
-        "mono_token_character_embedders": {
-          "TBID_PLACEHOLDER": {
-            "token_embedders" : {
-              "token_characters": {
-                "type": "embedding",
-                "vocab_namespace": "PLACEHOLDER_token_characters",
-                "embedding_dim": 64,
-              }
-            }
-          }
-        },
-        "mono_token_character_encoders": {
-          "TBID_PLACEHOLDER": {
-            "type": "lstm",
-            "input_size": 64,
-            "hidden_size": 64,
-            "num_layers": 3,
-            "bidirectional": true
-          },
-        },
-        "mono_encoders": {
-          "TBID_PLACEHOLDER": {
-            "type": "lstm",
-            "input_size": 128,
-            "hidden_size": 200,
-            "num_layers": 3,
-            "bidirectional": true
-          },
-        },
-      "dropout": 0.33,
-      "input_dropout_word": 0.33,
-      "input_dropout_character": 0.05
-      },
+
+    "dropout": 0.33,
+    "input_dropout_word": 0.33,
+    },
     "heads": {
-      "multi_dependencies": {
-        "type": "multiview_multi_parser",
+      "first_dependencies": {
+        "type": "multiview_parser",
         "encoder_dim": encoder_dim,
         "tag_representation_dim": 100,
         "arc_representation_dim": 500,
         "use_mst_decoding_for_validation": true,
-        "dropout": 0.33
+        "dropout": 0.33,
+        "encoded_text_source": "first_encoded_text"
       },
-      "mono_dependencies": {
-        "type": "multiview_mono_parser",
-        "encoder_dim": 400,
+      "last_dependencies": {
+        "type": "multiview_parser",
+        "encoder_dim": encoder_dim,
         "tag_representation_dim": 100,
         "arc_representation_dim": 500,
         "use_mst_decoding_for_validation": true,
-        "dropout": 0.33
+        "dropout": 0.33,
+        "encoded_text_source": "last_encoded_text"
       },
       "meta_dependencies": {
         "type": "multiview_meta_parser",
         "meta_encoder": {
           "type": "stacked_bidirectional_lstm",
-          "input_size": transformer_dim + 400,
+          "input_size": transformer_dim + transformer_dim,
           "hidden_size": 400,
           "num_layers": 2,
           "recurrent_dropout_probability": 0.33,
           "use_highway": true
         },
-        //"encoder_dim": encoder_dim + 200,
         "tag_representation_dim": 100,
         "arc_representation_dim": 500,
         "use_mst_decoding_for_validation": true,
-        "dropout": 0.33
-      }      
-
+        "dropout": 0.33,
+        "first_encoded_text_source": "first_encoded_text",
+        "second_encoded_text_source": "last_encoded_text"
+      }
     }
   },
+  
   "data_loader": {
     "type": "multitask",
     "scheduler": {
@@ -145,7 +113,7 @@ local reader_common = {
     "grad_norm": 5.0,
     "patience": 10,
     "cuda_device": 0,
-    "validation_metric": "+multi_dependencies",
+    "validation_metric": "+meta_dependencies_LAS_AVG",
     "optimizer": {
       "type": "huggingface_adamw",
       "lr": 3e-4,

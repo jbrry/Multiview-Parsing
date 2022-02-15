@@ -1,5 +1,4 @@
-//local transformer_model = std.extVar("MODEL_NAME");
-local transformer_model = "placeholder";
+local transformer_model = std.extVar("MODEL_NAME");
 local max_length = 128;
 local transformer_dim = 768;
 local encoder_dim = transformer_dim;
@@ -8,7 +7,7 @@ local batch_size = 8;
 
 // the pretrained transformer is common to all readers
 local reader_common = {
-  "multi_token_indexers": {
+  "token_indexers": {
     "tokens": {
       "type": "pretrained_transformer_mismatched",
       "model_name": transformer_model,
@@ -34,19 +33,19 @@ local reader_common = {
   },
 
   "train_data_path": {
-    "TBID_PLACEHOLDER": "_",
+    TBID_PLACEHOLDER: std.extVar("TRAIN_DATA_PATH"),
   },
   "validation_data_path": {
-    "TBID_PLACEHOLDER": "_",
+    TBID_PLACEHOLDER: std.extVar("DEV_DATA_PATH"),
   },
   "test_data_path": {
-    "TBID_PLACEHOLDER": "_",
+    TBID_PLACEHOLDER: std.extVar("TEST_DATA_PATH"),
   },
 
   "model": {
     "type": "multitask_v2",
     "multiple_heads_one_data_source": true,
-    "desired_order_of_heads" : ["multi_dependencies"],
+    "desired_order_of_heads" : ["dependencies"],
     "backbone": {
       "type": "multiview",
         "multi_embedder": {
@@ -60,12 +59,11 @@ local reader_common = {
         },
       "dropout": 0.33,
       "input_dropout_word": 0.33,
-      "input_dropout_character": 0.05
       },
     "heads": {
-      "multi_dependencies": {
-        "type": "multiview_multi_parser",
-        "encoder_dim": encoder_dim,
+      "dependencies": {
+        "type": "singleview_parser",
+        "encoder_dim": transformer_dim,
         "tag_representation_dim": 100,
         "arc_representation_dim": 500,
         "use_mst_decoding_for_validation": true,
@@ -80,7 +78,6 @@ local reader_common = {
     },
     "shuffle": true,
   },
-
   "trainer": {
     "num_epochs": 50,
     "grad_norm": 5.0,
@@ -100,7 +97,7 @@ local reader_common = {
     },
   },
   "evaluate_on_test": true,
-  //"random_seed": std.parseInt(std.extVar("RANDOM_SEED")),
-  //"numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
-  //"pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
+  "random_seed": std.parseInt(std.extVar("RANDOM_SEED")),
+  "numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
+  "pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
 }

@@ -1,22 +1,21 @@
-local transformer_model = "placeholder";
+local transformer_model = std.extVar("MODEL_NAME");
 local max_length = 128;
 local transformer_dim = 768;
 local encoder_dim = transformer_dim;
 
 local batch_size = 8;
 
-// the pretrained transformer is common to all readers
 local reader_common = {
-  "multi_token_indexers": {
+  "token_indexers": {
     "tokens": {
       "type": "pretrained_transformer_mismatched",
       "model_name": transformer_model,
       "max_length": max_length,
       "tokenizer_kwargs": {
-        "do_lower_case": false,
-        "tokenize_chinese_chars": true, // true for mbert
-        "strip_accents": false,
-        "clean_text": true,
+          "do_lower_case": false,
+          "tokenize_chinese_chars": true, // true for mbert
+          "strip_accents": false,
+          "clean_text": true,
       }
     }
   }
@@ -27,13 +26,13 @@ local reader_common = {
     "type": "multitask",
     "readers": {
       "TBID_PLACEHOLDER": reader_common {
-        "type": "universal_dependencies_multi",
-          "mono_sentence_character_indexers" : {
-            "token_characters" : {
-              "type": "single_id",
-              "namespace": "PLACEHOLDER_sentence_character_vocab",
-            }
-          }  
+        "type": "universal_dependencies_all_features",
+        "token_indexers": {
+          "tokens": {
+            "type": "single_id",
+            "namespace": "TBID_PLACEHOLDER_tokens"
+          },
+        }
       }
     }
   },
@@ -63,41 +62,12 @@ local reader_common = {
             }
           }
         },
-        "mono_sentence_character_embedders": {
-          "TBID_PLACEHOLDER": {
-            "token_embedders" : {
-              "token_characters": {
-                "type": "embedding",
-                "vocab_namespace": "PLACEHOLDER_sentence_characters",
-                "embedding_dim": 64,
-              }
-            }
-          }
-        },
-        "mono_sentence_character_encoders": {
-          "TBID_PLACEHOLDER": {
-            "type": "lstm",
-            "input_size": 64,
-            "hidden_size": 64,
-            "num_layers": 3,
-            "bidirectional": true
-          },
-        },
-        "mono_encoders": {
-          "TBID_PLACEHOLDER": {
-            "type": "lstm",
-            "input_size": 256,
-            "hidden_size": 200,
-            "num_layers": 3,
-            "bidirectional": true
-          },
-        },
-      "dropout": 0.33,
-      "input_dropout_word": 0.33,
-      "input_dropout_character": 0.05
-      },
+
+    "dropout": 0.33,
+    "input_dropout_word": 0.33,
+    },
     "heads": {
-      "multi_dependencies": {
+      "first": {
         "type": "multiview_multi_parser",
         "encoder_dim": encoder_dim,
         "tag_representation_dim": 100,
@@ -105,9 +75,9 @@ local reader_common = {
         "use_mst_decoding_for_validation": true,
         "dropout": 0.33
       },
-      "mono_dependencies": {
-        "type": "multiview_mono_parser",
-        "encoder_dim": 400,
+      "last": {
+        "type": "multiview_multi_parser",
+        "encoder_dim": encoder_dim,
         "tag_representation_dim": 100,
         "arc_representation_dim": 500,
         "use_mst_decoding_for_validation": true,
@@ -117,21 +87,20 @@ local reader_common = {
         "type": "multiview_meta_parser",
         "meta_encoder": {
           "type": "stacked_bidirectional_lstm",
-          "input_size": transformer_dim + 400,
+          "input_size": transformer_dim + transformer_dim,
           "hidden_size": 400,
           "num_layers": 2,
           "recurrent_dropout_probability": 0.33,
           "use_highway": true
         },
-        //"encoder_dim": encoder_dim + 200,
         "tag_representation_dim": 100,
         "arc_representation_dim": 500,
         "use_mst_decoding_for_validation": true,
         "dropout": 0.33
-      }      
-
+      }
     }
   },
+
   "data_loader": {
     "type": "multitask",
     "scheduler": {
@@ -145,7 +114,7 @@ local reader_common = {
     "grad_norm": 5.0,
     "patience": 10,
     "cuda_device": 0,
-    "validation_metric": "+multi_dependencies",
+    "validation_metric": "+meta_dependencies_LAS_AVG",
     "optimizer": {
       "type": "huggingface_adamw",
       "lr": 3e-4,
@@ -159,7 +128,7 @@ local reader_common = {
     },
   },
   "evaluate_on_test": true,
-  //"random_seed": std.parseInt(std.extVar("RANDOM_SEED")),
-  //"numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
-  //"pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
+  "random_seed": std.parseInt(std.extVar("RANDOM_SEED")),
+  "numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
+  "pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
 }
