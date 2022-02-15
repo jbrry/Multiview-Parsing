@@ -1,11 +1,12 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import torch
 from torch.nn.modules import Dropout
 
 from allennlp.data import TextFieldTensors, Vocabulary
 from allennlp.modules.backbones.backbone import Backbone
-from allennlp.modules.seq2seq_encoders.seq2seq_encoder import Seq2SeqEncoder
+from allennlp.modules.seq2seq_encoders.seq2seq_encoder import Seq2SeqEncoder 
+from allennlp.modules.seq2vec_encoders.seq2vec_encoder import Seq2VecEncoder
 from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder, Embedding, InputVariationalDropout
 
 from allennlp.modules.token_embedders.pretrained_transformer_embedder import (
@@ -13,18 +14,15 @@ from allennlp.modules.token_embedders.pretrained_transformer_embedder import (
 )
 from allennlp.nn import util
 
-
-@Backbone.register("multi_input")
-class MultiInputBackbone(Backbone):
+@Backbone.register("transformer")
+class TransformerBackbone(Backbone):
     """
-    This `Backbone` embeds and encodes input text based on multiple inputs or 'views'.
-    For example, one view may comprise of a shared vocabulary and another may be 
-    a dataset-specific vocabulary.
-
-    Registered as a `Backbone` with name "multi_input".
-
+    Registered as a `Backbone` with name "transformer".
+    A TextFieldEmbedder is used to encode the word representations, where the 
+    TextFieldEmbedder should be a pretrained_transformer*. In this way, we do not have a second encoder
+    for the word features. There are, however, encoders to encode the character representations which are 
+    then concatenated with the output of a pretrained transformer.
     # Parameters
-
     vocab : `Vocabulary`
         Necessary for converting input ids to strings in `make_output_human_readable`.  If you set
         `output_token_strings` to `False`, or if you never call `make_output_human_readable`, then
@@ -42,67 +40,48 @@ class MultiInputBackbone(Backbone):
         "tokens").  This is necessary for certain demo functionality, and it adds only a trivial
         amount of computation if you are not using a demo.
     """
-
     def __init__(
         self,
         vocab: Vocabulary,
         *,
-        token_embedders: Dict[str, TextFieldEmbedder],
-        encoder: Seq2SeqEncoder,
-        output_token_strings: bool = True,
+        text_field_embedder: TextFieldEmbedder = None,
+        mono_embedders: Dict[str, TextFieldEmbedder] = None,
+        mono_encoders: Dict[str, Seq2SeqEncoder] = None,
+        output_token_strings: bool = False,
         dropout: float = 0.0,
-        input_dropout: float = 0.0,
-        vocab_namespace: str = "tags",
+        input_dropout_word: float = 0.0,
     ) -> None:
         super().__init__()
-        self._vocab = vocab
-        self._namespace = vocab_namespace
 
-        self._token_embedders = token_embedders
-        self._encoder = encoder
+        self._text_field_embedder = text_field_embedder
+
         self._output_token_strings = output_token_strings
-
         self._dropout = InputVariationalDropout(dropout)
-        self._input_dropout = Dropout(input_dropout)
+        self._input_dropout_word = Dropout(input_dropout_word)
 
     def forward(self,
-                backbone_arguments,
+                metadata: List[Dict] = None,
+                task: List[str] = None,
+                words: TextFieldTensors = None,
                 ) -> Dict[str, torch.Tensor]:  # type: ignore
-        
-        if len(backbone_arguments["words_polyglot"]) != 1:
+
+        batch_tbid = task[0]
+
+        if words and len(words) != 1:
             raise ValueError(
-                "Text is only compatible with using a single TokenIndexer"
+                "Pretrained Transformer is only compatible with using single TokenIndexers"
             )
 
-        if backbone_arguments["dataset"] is None:
-            raise ConfigurationError(
-                    "Backbone arguments is missing 'dataset' MetadataField; "
-                    "Use the universal_dependencies_meta dataset reader.")
-        
-        dataset_keys = ["polyglot"]
-        batch_dataset = backbone_arguments["dataset"][0]
-        dataset_keys.append(batch_dataset)
+        mask = util.get_text_field_mask(words)
 
-        outputs = {}
-        for dataset_key in dataset_keys:
-            # Embed the input words with the appropriate token embedder
-            words = backbone_arguments[f"words_{dataset_key}"]
-            token_embedder = self._token_embedders[f"{dataset_key}_embedder"]
-            embedded_text_input = token_embedder(words)
-            embedded_text_input = self._input_dropout(embedded_text_input)
-            print("Embedded text", embedded_text_input.size())
+        if self._text_field_embedder:
+            embedded_text_input = self._text_field_embedder(words)
+            embedded_text_input = self._input_dropout_word(embedded_text_input)
 
-            # Encode the embedded text
-            mask = util.get_text_field_mask(words)
-            encoded_text = self._encoder(embedded_text_input, mask)
-            encoded_text = self._dropout(encoded_text)
-            print("Encoded text", encoded_text.size())
-            
-            outputs[f"encoded_text_{dataset_key}"] = encoded_text
-            outputs["encoded_text_mask"] = mask
-
-        if self._output_token_strings:
-            outputs["token_ids"] = util.get_token_ids_from_text_field_tensors(words)
+        outputs = {
+            "encoded_text": embedded_text_input,
+            "mask": mask
+        }
 
         return outputs
 

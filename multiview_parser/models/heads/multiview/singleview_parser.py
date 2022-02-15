@@ -3,7 +3,6 @@ import logging
 import copy
 
 from collections import defaultdict
-
 import torch
 import torch.nn.functional as F
 from torch.nn.modules import Dropout
@@ -11,15 +10,8 @@ import numpy
 
 from allennlp.common.checks import check_dimensions_match, ConfigurationError
 from allennlp.data import TextFieldTensors, Vocabulary
-from allennlp.modules import (
-    Seq2SeqEncoder,
-    TextFieldEmbedder,
-    Embedding,
-    InputVariationalDropout,
-)
-from allennlp.modules.matrix_attention.bilinear_matrix_attention import (
-    BilinearMatrixAttention,
-)
+from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder, Embedding, InputVariationalDropout
+from allennlp.modules.matrix_attention.bilinear_matrix_attention import BilinearMatrixAttention
 from allennlp.models.heads.head import Head
 from allennlp.modules import FeedForward
 from allennlp.models.model import Model
@@ -33,45 +25,33 @@ from allennlp.nn.util import (
 from allennlp.nn.chu_liu_edmonds import decode_mst
 from allennlp.training.metrics import AttachmentScores
 
-from multiview_parser.modules import CrossStitchBlock
-
 logger = logging.getLogger(__name__)
 
 POS_TO_IGNORE = {"`", "''", ":", ",", ".", "PU", "PUNCT", "SYM"}
 
 
-@Head.register("multiview_meta_parser")
-class MultiviewMetaParserHead(Head):
+@Head.register("singleview_parser")
+class SingleViewParserHead(Head):
     """ """
 
     def __init__(
         self,
         vocab: Vocabulary,
-        meta_encoder: Seq2SeqEncoder,
+        encoder_dim: int,
         tag_representation_dim: int,
         arc_representation_dim: int,
-        first_encoded_text_source: str,
-        second_encoded_text_source: str,
-        num_tasks: int = 2,
-        num_subspaces: int = 2,
         tag_feedforward: FeedForward = None,
         arc_feedforward: FeedForward = None,
         pos_tag_embedding: Embedding = None,
         use_mst_decoding_for_validation: bool = True,
-        use_cross_stitch: bool = False,
         dropout: float = 0.0,
         initializer: InitializerApplicator = InitializerApplicator(),
         **kwargs,
     ) -> None:
         super().__init__(vocab, **kwargs)
 
-        self.meta_encoder = meta_encoder
-
         self.head_arc_feedforward = arc_feedforward or FeedForward(
-            meta_encoder.get_output_dim(),
-            1,
-            arc_representation_dim,
-            Activation.by_name("elu")(),
+            encoder_dim, 1, arc_representation_dim, Activation.by_name("elu")()
         )
         self.child_arc_feedforward = copy.deepcopy(self.head_arc_feedforward)
 
@@ -79,15 +59,10 @@ class MultiviewMetaParserHead(Head):
             arc_representation_dim, arc_representation_dim, use_input_biases=True
         )
 
-        self.cross_stitch = CrossStitchBlock(num_tasks, num_subspaces)
-
         num_labels = self.vocab.get_vocab_size("head_tags")
 
         self.head_tag_feedforward = tag_feedforward or FeedForward(
-            meta_encoder.get_output_dim(),
-            1,
-            tag_representation_dim,
-            Activation.by_name("elu")(),
+            encoder_dim, 1, tag_representation_dim, Activation.by_name("elu")()
         )
         self.child_tag_feedforward = copy.deepcopy(self.head_tag_feedforward)
 
@@ -95,13 +70,9 @@ class MultiviewMetaParserHead(Head):
             tag_representation_dim, tag_representation_dim, num_labels
         )
 
-        self._first_encoded_text_source = first_encoded_text_source
-        self._second_encoded_text_source = second_encoded_text_source
         self._pos_tag_embedding = pos_tag_embedding or None
         self._dropout = InputVariationalDropout(dropout)
-        self._head_sentinel = torch.nn.Parameter(
-            torch.randn([1, 1, meta_encoder.get_output_dim()])
-        )
+        self._head_sentinel = torch.nn.Parameter(torch.randn([1, 1, encoder_dim]))
 
         check_dimensions_match(
             tag_representation_dim,
@@ -117,7 +88,9 @@ class MultiviewMetaParserHead(Head):
         )
 
         self.use_mst_decoding_for_validation = use_mst_decoding_for_validation
-        self.use_cross_stitch = use_cross_stitch
+
+
+        print(self.use_mst_decoding_for_validation)
 
         tags = self.vocab.get_token_to_index_vocabulary("upos")
         punctuation_tag_indices = {
@@ -129,41 +102,26 @@ class MultiviewMetaParserHead(Head):
             "Ignoring words with these POS tags for evaluation."
         )
 
-        self._task_attachment_scores: Dict[str, AttachmentScores] = defaultdict(
-            AttachmentScores
-        )
-
+        self._task_attachment_scores: Dict[
+                str, AttachmentScores] = defaultdict(AttachmentScores)
         initializer(self)
 
     def forward(
         self,  # type: ignore
-        encoded_text,
+        encoded_text: TextFieldTensors,
         task,
         mask: torch.BoolTensor,
         metadata: List[Dict[str, Any]],
         upos: torch.LongTensor = None,
         lemmas: torch.LongTensor = None,
-        upos_encoded_representation: torch.FloatTensor = None,
-        xpos_encoded_representation: torch.FloatTensor = None,
-        feats_encoded_representation: torch.FloatTensor = None,
         head_tags: torch.LongTensor = None,
         head_indices: torch.LongTensor = None,
     ) -> Dict[str, torch.Tensor]:
-
-        first_view_encoded_text = encoded_text[self._first_encoded_text_source]
-        second_view_encoded_text = encoded_text[self._second_encoded_text_source]
-
+        
         batch_task = task[0]
 
-        predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll = self._parse(
-            first_view_encoded_text,
-            second_view_encoded_text,
-            mask,
-            upos_encoded_representation,
-            xpos_encoded_representation,
-            feats_encoded_representation,
-            head_tags,
-            head_indices,
+        predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll  = self._parse(
+            encoded_text, mask, head_tags, head_indices
         )
 
         loss = arc_nll + tag_nll
@@ -182,10 +140,7 @@ class MultiviewMetaParserHead(Head):
             )
 
         # output_dict keys will be changed to `{head_name}_key` by the multitask model
-
         output_dict = {
-            # "predicted_heads": predicted_heads,
-            # "predicted_head_tags": predicted_head_tags,
             "heads": predicted_heads,
             "head_tags": predicted_head_tags,
             "arc_loss": arc_nll,
@@ -215,6 +170,7 @@ class MultiviewMetaParserHead(Head):
                 x["multiword_forms"] for x in metadata if "multiword_forms" in x
             ]
 
+
         return output_dict
 
     def make_output_human_readable(
@@ -231,8 +187,7 @@ class MultiviewMetaParserHead(Head):
             instance_heads = list(instance_heads[1:length])
             instance_tags = instance_tags[1:length]
             labels = [
-                self.vocab.get_token_from_index(label, "head_tags")
-                for label in instance_tags
+                self.vocab.get_token_from_index(label, "head_tags") for label in instance_tags
             ]
             head_tag_labels.append(labels)
             head_indices.append(instance_heads)
@@ -243,32 +198,12 @@ class MultiviewMetaParserHead(Head):
 
     def _parse(
         self,
-        first_view_encoded_text: torch.Tensor,
-        second_view_encoded_text: torch.Tensor,
-        mask: torch.BoolTensor,
-        upos_encoded_representation: torch.FloatTensor = None,
-        xpos_encoded_representation: torch.FloatTensor = None,
-        feats_encoded_representation: torch.FloatTensor = None,
+        encoded_text: torch.Tensor,
+        mask: torch.BoolTensor,      
         head_tags: torch.LongTensor = None,
         head_indices: torch.LongTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
-        if self.use_cross_stitch:
-            # pass output of different tasks to cross-stitch block
-            cross_stitch_inputs = [first_view_encoded_text, second_view_encoded_text]
-            cross_stitch_outputs = self.cross_stitch(cross_stitch_inputs)
-            # unpack cross-stitched output to be passed to subsequent layer
-            #stitched_first_view_encoded_text, stitched_second_view_encoded_text = cross_stitch_outputs
-            inputs = torch.cat([stitched_first_view_encoded_text, stitched_second_view_encoded_text], -1)
-            # stack view outputs to a tensor
-            # x = torch.stack(cross_stitch_outputs, dim=0)
-            # inputs = torch.sum(x, dim=0)
-        else:
-            inputs = torch.cat([first_view_encoded_text, second_view_encoded_text], -1)
-        # inputs = self._dropout(inputs)
-
-        # Pass inputs to the encoder
-        encoded_text = self.meta_encoder(inputs, mask)
         batch_size, _, encoding_dim = encoded_text.size()
 
         head_sentinel = self._head_sentinel.expand(batch_size, 1, encoding_dim)
@@ -276,34 +211,23 @@ class MultiviewMetaParserHead(Head):
         encoded_text = torch.cat([head_sentinel, encoded_text], 1)
         mask = torch.cat([mask.new_ones(batch_size, 1), mask], 1)
         if head_indices is not None:
-            head_indices = torch.cat(
-                [head_indices.new_zeros(batch_size, 1), head_indices], 1
-            )
+            head_indices = torch.cat([head_indices.new_zeros(batch_size, 1), head_indices], 1)
         if head_tags is not None:
             head_tags = torch.cat([head_tags.new_zeros(batch_size, 1), head_tags], 1)
-        encoded_text = self._dropout(encoded_text)
 
         # shape (batch_size, sequence_length, arc_representation_dim)
         head_arc_representation = self._dropout(self.head_arc_feedforward(encoded_text))
-        child_arc_representation = self._dropout(
-            self.child_arc_feedforward(encoded_text)
-        )
+        child_arc_representation = self._dropout(self.child_arc_feedforward(encoded_text))
 
         # shape (batch_size, sequence_length, tag_representation_dim)
         head_tag_representation = self._dropout(self.head_tag_feedforward(encoded_text))
-        child_tag_representation = self._dropout(
-            self.child_tag_feedforward(encoded_text)
-        )
+        child_tag_representation = self._dropout(self.child_tag_feedforward(encoded_text))
         # shape (batch_size, sequence_length, sequence_length)
-        attended_arcs = self.arc_attention(
-            head_arc_representation, child_arc_representation
-        )
+        attended_arcs = self.arc_attention(head_arc_representation, child_arc_representation)
 
         minus_inf = -1e8
         minus_mask = ~mask * minus_inf
-        attended_arcs = (
-            attended_arcs + minus_mask.unsqueeze(2) + minus_mask.unsqueeze(1)
-        )
+        attended_arcs = attended_arcs + minus_mask.unsqueeze(2) + minus_mask.unsqueeze(1)
 
         if self.training or not self.use_mst_decoding_for_validation:
             predicted_heads, predicted_head_tags = self._greedy_decode(
@@ -375,14 +299,10 @@ class MultiviewMetaParserHead(Head):
         """
         batch_size, sequence_length, _ = attended_arcs.size()
         # shape (batch_size, 1)
-        range_vector = get_range_vector(
-            batch_size, get_device_of(attended_arcs)
-        ).unsqueeze(1)
+        range_vector = get_range_vector(batch_size, get_device_of(attended_arcs)).unsqueeze(1)
         # shape (batch_size, sequence_length, sequence_length)
         normalised_arc_logits = (
-            masked_log_softmax(attended_arcs, mask)
-            * mask.unsqueeze(2)
-            * mask.unsqueeze(1)
+            masked_log_softmax(attended_arcs, mask) * mask.unsqueeze(2) * mask.unsqueeze(1)
         )
 
         # shape (batch_size, sequence_length, num_head_tags)
@@ -395,9 +315,7 @@ class MultiviewMetaParserHead(Head):
         # index matrix with shape (batch, sequence_length)
         timestep_index = get_range_vector(sequence_length, get_device_of(attended_arcs))
         child_index = (
-            timestep_index.view(1, sequence_length)
-            .expand(batch_size, sequence_length)
-            .long()
+            timestep_index.view(1, sequence_length).expand(batch_size, sequence_length).long()
         )
         # shape (batch_size, sequence_length)
         arc_loss = normalised_arc_logits[range_vector, child_index, head_indices]
@@ -517,7 +435,7 @@ class MultiviewMetaParserHead(Head):
 
         # Note that this log_softmax is over the tag dimension, and we don't consider pairs
         # of tags which are invalid (e.g are a pair which includes a padded element) anyway below.
-        # Shape (batch, num_labels,sequence_length, sequence_length)
+        # Shape (batch, num_labels, sequence_length, sequence_length)
         normalized_pairwise_head_logits = F.log_softmax(pairwise_head_logits, dim=3).permute(
             0, 3, 1, 2
         )
@@ -545,8 +463,29 @@ class MultiviewMetaParserHead(Head):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         heads = []
         head_tags = []
+
+        # import sys
+        # sys.path.append('/home/jbarry/spinning-storage/jbarry/Multiview-Parsing/spanningtrees')
+        # from spanningtrees.graph import Graph
+        # from spanningtrees.mst import MST
+        # operating on the sentence level
+        # (num_tags, seq, seq)
         for energy, length in zip(batch_energy.detach().cpu(), lengths):
             scores, tag_ids = energy.max(dim=0)
+            #print(len(scores))
+            #print(len(scores[0]))
+            #print(scores.shape)
+            #x = scores.numpy()
+            #print(x)
+            #print(x.shape)
+            #print(tag_ids)
+            
+            ###
+            #G = Graph.build(scores.numpy()) this requires child to head scores, but we have the opposite at the moment.
+            #mst_constrained = MST(G, True).mst()
+            #print(mst_constrained.to_array())
+            ####
+
             # Although we need to include the root node so that the MST includes it,
             # we do not want any word to be the parent of the root node.
             # Here, we enforce this by setting the scores for all word -> ROOT edges
@@ -555,7 +494,16 @@ class MultiviewMetaParserHead(Head):
             # Decode the heads. Because we modify the scores to prevent
             # adding in word -> ROOT edges, we need to find the labels ourselves.
             instance_heads, _ = decode_mst(scores.numpy(), length, has_labels=False)
+            # LATTICE solution to multiple roots (https://github.com/jujbob/multilingual-bist-parser/blob/master/bist-parser/bmstparser/src/mstlstm.py)
+            root_heads = [h for h in instance_heads if h == 0]
+            if len(root_heads) != 1:
+                logger.debug(
+                    "Found multi-root, setting first root as head of other roots."
+                )
 
+                root_heads = [seq for seq, head in enumerate(instance_heads) if head == 0]
+                for seq in root_heads[1:]:
+                    instance_heads[seq] = root_heads[0]
             # Find the labels which correspond to the edges in the max spanning tree.
             instance_head_tags = []
             for child, parent in enumerate(instance_heads):
@@ -587,10 +535,10 @@ class MultiviewMetaParserHead(Head):
         head_tag_representation : `torch.Tensor`, required.
             A tensor of shape (batch_size, sequence_length, tag_representation_dim),
             which will be used to generate predictions for the dependency tags
-            for the given arcs.
-        child_tag_representation : `torch.Tensor`, required
-            A tensor of shape (batch_size, sequence_length, tag_representation_dim),
-            which will be used to generate predictions for the dependency tags
+            for the give        # Shape (batch_size, num_head_tags, sequence_length, sequence_length)
+        # This energy tensor expresses the following relation:
+        # energy[i,j] = "Score that i is the head of j". In this
+        # case, we have heads pointing to their children.e used to generate predictions for the dependency tags
             for the given arcs.
         head_indices : `torch.Tensor`, required.
             A tensor of shape (batch_size, sequence_length). The indices of the heads
@@ -614,12 +562,8 @@ class MultiviewMetaParserHead(Head):
         # sequence length dimension for each element in the batch.
 
         # shape (batch_size, sequence_length, tag_representation_dim)
-        selected_head_tag_representations = head_tag_representation[
-            range_vector, head_indices
-        ]
-        selected_head_tag_representations = (
-            selected_head_tag_representations.contiguous()
-        )
+        selected_head_tag_representations = head_tag_representation[range_vector, head_indices]
+        selected_head_tag_representations = selected_head_tag_representations.contiguous()
         # shape (batch_size, sequence_length, num_head_tags)
         head_tag_logits = self.tag_bilinear(
             selected_head_tag_representations, child_tag_representation
@@ -649,25 +593,28 @@ class MultiviewMetaParserHead(Head):
         return new_mask
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-
+        
         metrics = {}
         all_uas = []
         all_las = []
-
+        
         for task, scores in self._task_attachment_scores.items():
             task_metrics = scores.get_metric(reset)
             for key in task_metrics.keys():
                 # Store only those metrics.
-                if key in ["UAS", "LAS", "loss"]:
+                if key in ['UAS', 'LAS', 'loss']:
                     metrics["{}_{}".format(key, task)] = task_metrics[key]
 
             # Include in the average only languages that should count for early stopping.
-            # if task in self._langs_for_early_stop:
+            #if task in self._langs_for_early_stop:
             all_uas.append(metrics["UAS_{}".format(task)])
             all_las.append(metrics["LAS_{}".format(task)])
 
         # if self._langs_for_early_stop:
-        metrics.update({"UAS_AVG": numpy.mean(all_uas), "LAS_AVG": numpy.mean(all_las)})
+        metrics.update({
+                "UAS_AVG": numpy.mean(all_uas),
+                "LAS_AVG": numpy.mean(all_las)
+        })
 
         return metrics
 

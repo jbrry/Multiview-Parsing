@@ -119,6 +119,8 @@ class PretrainedTransformerMismatchedFirstLastEmbedder(TokenEmbedder):
         `torch.Tensor`
             Shape: [batch_size, num_orig_tokens, embedding_size].
         """
+
+        print("my token mode is, ", self.sub_token_mode)
         # Shape: [batch_size, num_wordpieces, embedding_size].
         embeddings = self._matched_embedder(
             token_ids, wordpiece_mask, type_ids=type_ids, segment_concat_mask=segment_concat_mask
@@ -163,8 +165,14 @@ class PretrainedTransformerMismatchedFirstLastEmbedder(TokenEmbedder):
             # get end indices which are the second element in the tuple
             last_indices = offsets[:, :, 1]
             last_embeddings = util.batched_index_select(embeddings.contiguous(), last_indices)
+
+            orig_embeddings  = torch.cat([first_embeddings, last_embeddings], dim=0)
+            #print(f"fe {first_embeddings.size()}")
+            #print(f"le {last_embeddings.size()}")
+            #print(f"oe {orig_embeddings.size()}")
+
         # If invalid "sub_token_mode" is provided, throw error
         else:
             raise ConfigurationError(f"Do not recognise 'sub_token_mode' {self.sub_token_mode}")
         
-        return first_embeddings, last_embeddings
+        return orig_embeddings

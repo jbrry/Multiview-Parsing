@@ -6,7 +6,7 @@ https://github.com/allenai/allennlp-models/blob/master/allennlp_models/structure
 
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Union
 
 
 from allennlp.common.util import JsonDict, sanitize
@@ -28,10 +28,10 @@ class ConlluMultitaskPredictor(Predictor):
         dataset_reader: DatasetReader,
         language: str = "en_core_web_sm",
         head_name: str = "dependencies",
-        write_metadata: bool = True,
+        write_metadata: bool = False,
+        #overrides: Union[str, Dict[str, Any]] = ""
     ) -> None:
         super().__init__(model, dataset_reader)
-
         self.head_name = head_name
         self.write_metadata = write_metadata
 

@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 POS_TO_IGNORE = {"`", "''", ":", ",", ".", "PU", "PUNCT", "SYM"}
 
 
-@Head.register("multiview_mono_parser")
-class MultiviewMonoParserHead(Head):
+@Head.register("multiview_parser")
+class MultiviewParserHead(Head):
     """ """
 
     def __init__(
@@ -44,6 +44,7 @@ class MultiviewMonoParserHead(Head):
         tag_feedforward: FeedForward = None,
         arc_feedforward: FeedForward = None,
         pos_tag_embedding: Embedding = None,
+        encoded_text_source: str = None,
         use_mst_decoding_for_validation: bool = True,
         dropout: float = 0.0,
         initializer: InitializerApplicator = InitializerApplicator(),
@@ -71,6 +72,7 @@ class MultiviewMonoParserHead(Head):
             tag_representation_dim, tag_representation_dim, num_labels
         )
 
+        self._encoded_text_source = encoded_text_source
         self._pos_tag_embedding = pos_tag_embedding or None
         self._dropout = InputVariationalDropout(dropout)
         self._head_sentinel = torch.nn.Parameter(torch.randn([1, 1, encoder_dim]))
@@ -113,20 +115,17 @@ class MultiviewMonoParserHead(Head):
         metadata: List[Dict[str, Any]],
         upos: torch.LongTensor = None,
         lemmas: torch.LongTensor = None,
-        upos_encoded_representation: torch.FloatTensor = None,
-        xpos_encoded_representation: torch.FloatTensor = None,
-        feats_encoded_representation: torch.FloatTensor = None,
         head_tags: torch.LongTensor = None,
         head_indices: torch.LongTensor = None,
     ) -> Dict[str, torch.Tensor]:
 
-        encoded_text = encoded_text["mono_encoded_text"]
+        # unpack the encoded text given the key used in backbone
+        encoded_text = encoded_text[self._encoded_text_source]
 
         batch_task = task[0]
 
         predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll  = self._parse(
-            encoded_text, mask, upos_encoded_representation, xpos_encoded_representation,
-            feats_encoded_representation, head_tags, head_indices
+            encoded_text, mask, head_tags, head_indices
         )
 
         loss = arc_nll + tag_nll
@@ -184,25 +183,10 @@ class MultiviewMonoParserHead(Head):
     def _parse(
         self,
         encoded_text: torch.Tensor,
-        mask: torch.BoolTensor,
-        upos_encoded_representation: torch.FloatTensor = None,
-        xpos_encoded_representation: torch.FloatTensor = None,
-        feats_encoded_representation: torch.FloatTensor = None,        
+        mask: torch.BoolTensor,       
         head_tags: torch.LongTensor = None,
         head_indices: torch.LongTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-
-        concatenated_input = [encoded_text]
-     
-        if upos_encoded_representation is not None:
-            concatenated_input.append(upos_encoded_representation)
-        if xpos_encoded_representation is not None:
-            concatenated_input.append(xpos_encoded_representation)
-        if feats_encoded_representation is not None:
-            concatenated_input.append(feats_encoded_representation)
-
-        if len(concatenated_input) > 1:
-            encoded_text = torch.cat(concatenated_input, -1)
 
         batch_size, _, encoding_dim = encoded_text.size()
 
