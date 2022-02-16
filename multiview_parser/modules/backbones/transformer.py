@@ -59,13 +59,7 @@ class TransformerBackbone(Backbone):
         self._dropout = InputVariationalDropout(dropout)
         self._input_dropout_word = Dropout(input_dropout_word)
 
-    def forward(self,
-                metadata: List[Dict] = None,
-                task: List[str] = None,
-                words: TextFieldTensors = None,
-                ) -> Dict[str, torch.Tensor]:  # type: ignore
-
-        batch_tbid = task[0]
+    def forward(self, words: TextFieldTensors = None) -> Dict[str, torch.Tensor]:  # type: ignore
 
         if words and len(words) != 1:
             raise ValueError(

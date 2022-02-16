@@ -125,41 +125,39 @@ class MultiTaskModelV2(Model):
         task_indices: Dict[str, torch.LongTensor] = {
             task: torch.LongTensor(indices) for task, indices in task_indices_just_for_mypy.items()
         }
-
-        def make_inputs_for_task(task: str, whole_batch_input: Union[torch.Tensor, List]):
-            if isinstance(whole_batch_input, torch.Tensor):
-                task_indices[task] = task_indices[task].to(whole_batch_input.device)
-                return torch.index_select(whole_batch_input, 0, task_indices[task])
-            else:
-                return [whole_batch_input[i] for i in task_indices[task]]
-
+        
         backbone_arguments = self._get_arguments(kwargs, "backbone")
         backbone_outputs = self._backbone(**backbone_arguments)
 
+        # don't think we need encoded text in the output anymore
         outputs = {**backbone_outputs}
-
+        
         loss = None
 
-        for head_name in self._heads:
-            # The default approach is to have multiple data sources and each data source has its own head,
-            # i.e. a 1:1 data source - head mapping; whereas here, we have one data source but multiple heads.
-            if not self._multiple_heads_one_data_source:
-                if head_name not in task_indices:
-                    continue
+        fixed_task_heads = ["multi_dependencies", "meta_dependencies"]
+        task_heads = [f"{batch_task}_dependencies"] + fixed_task_heads
+        assert len(task_heads) == 3 # tb, sh, meta
+        assert task_heads[-1] == "meta_dependencies"
 
-            combined_arguments = {**backbone_outputs, **kwargs, **outputs}
+    
+        for head_name in task_heads:
+            combined_arguments = {**backbone_outputs, **kwargs, **outputs} # 20 
+            head_arguments = self._get_arguments(combined_arguments, head_name) # 7
 
-            head_arguments = self._get_arguments(combined_arguments, head_name)
-
-            # Our `head_name`s won't be in the task-lists, so we skip this step.
-            if not self._multiple_heads_one_data_source:
-                head_arguments = {
-                    key: make_inputs_for_task(head_name, value) for key, value in head_arguments.items()
-                }
+            if head_name == "meta_dependencies":
+                # collect other module ouputs for the meta model
+                # af_afribooms_dependencies_module_text
+                tmp = {}
+                tmp["other_module_inputs"] = {} # make it a sub dictionary
+                for k in outputs.keys():
+                    if "module_text" in k:
+                        tmp["other_module_inputs"][k] = outputs[k]
+                head_arguments.update(tmp)
 
             head_outputs = self._heads[head_name](**head_arguments)
             for key in head_outputs:
                 outputs[f"{head_name}_{key}"] = head_outputs[key]
+
 
             if "loss" in head_outputs:
                 self._heads_called.add(head_name)

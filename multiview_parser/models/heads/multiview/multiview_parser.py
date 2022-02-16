@@ -33,12 +33,17 @@ POS_TO_IGNORE = {"`", "''", ":", ",", ".", "PU", "PUNCT", "SYM"}
 
 @Head.register("multiview_parser")
 class MultiviewParserHead(Head):
-    """ """
+    """
+    This is a parsing head to be used in a multiview learning setup.
+    The only difference between this head and a regular `singleview_parser`
+    is that this parser has an extra encoder, where the outputs of the encoder can be passed to
+    the meta model.
+    """
 
     def __init__(
         self,
         vocab: Vocabulary,
-        encoder_dim: int,
+        encoder: Seq2SeqEncoder,
         tag_representation_dim: int,
         arc_representation_dim: int,
         tag_feedforward: FeedForward = None,
@@ -52,8 +57,10 @@ class MultiviewParserHead(Head):
     ) -> None:
         super().__init__(vocab, **kwargs)
 
+        self.encoder = encoder
+
         self.head_arc_feedforward = arc_feedforward or FeedForward(
-            encoder_dim, 1, arc_representation_dim, Activation.by_name("elu")()
+            self.encoder.get_output_dim(), 1, arc_representation_dim, Activation.by_name("elu")()
         )
         self.child_arc_feedforward = copy.deepcopy(self.head_arc_feedforward)
 
@@ -64,7 +71,7 @@ class MultiviewParserHead(Head):
         num_labels = self.vocab.get_vocab_size("head_tags")
 
         self.head_tag_feedforward = tag_feedforward or FeedForward(
-            encoder_dim, 1, tag_representation_dim, Activation.by_name("elu")()
+            self.encoder.get_output_dim(), 1, tag_representation_dim, Activation.by_name("elu")()
         )
         self.child_tag_feedforward = copy.deepcopy(self.head_tag_feedforward)
 
@@ -75,7 +82,7 @@ class MultiviewParserHead(Head):
         self._encoded_text_source = encoded_text_source
         self._pos_tag_embedding = pos_tag_embedding or None
         self._dropout = InputVariationalDropout(dropout)
-        self._head_sentinel = torch.nn.Parameter(torch.randn([1, 1, encoder_dim]))
+        self._head_sentinel = torch.nn.Parameter(torch.randn([1, 1, self.encoder.get_output_dim()]))
 
         check_dimensions_match(
             tag_representation_dim,
@@ -102,14 +109,15 @@ class MultiviewParserHead(Head):
             "Ignoring words with these POS tags for evaluation."
         )
 
-        self._task_attachment_scores: Dict[
-                str, AttachmentScores] = defaultdict(AttachmentScores)
+        # self._task_attachment_scores: Dict[
+        #         str, AttachmentScores] = defaultdict(AttachmentScores)
+        self._attachment_scores = AttachmentScores()
 
         initializer(self)
 
     def forward(
         self,  # type: ignore
-        encoded_text: TextFieldTensors,
+        encoded_text: torch.FloatTensor,
         task,
         mask: torch.BoolTensor,
         metadata: List[Dict[str, Any]],
@@ -120,11 +128,14 @@ class MultiviewParserHead(Head):
     ) -> Dict[str, torch.Tensor]:
 
         # unpack the encoded text given the key used in backbone
-        encoded_text = encoded_text[self._encoded_text_source]
+        if self._encoded_text_source:
+            # we keep this here in case you want to change something to do with
+            # the encoded text in the backbone
+            encoded_text = encoded_text[self._encoded_text_source]
 
         batch_task = task[0]
 
-        predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll  = self._parse(
+        predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll, encoded_text  = self._parse(
             encoded_text, mask, head_tags, head_indices
         )
 
@@ -135,7 +146,7 @@ class MultiviewParserHead(Head):
             # We calculate attachment scores for the whole sentence
             # but excluding the symbolic ROOT token at the start,
             # which is why we start from the second element in the sequence.
-            self._task_attachment_scores[batch_task](
+            self._attachment_scores(
                 predicted_heads[:, 1:],
                 predicted_head_tags[:, 1:],
                 head_indices,
@@ -151,6 +162,7 @@ class MultiviewParserHead(Head):
             "tag_loss": tag_nll,
             "loss": loss,
             "mask": mask,
+            "module_text": encoded_text,
             "words": [meta["words"] for meta in metadata],
             "upos": [meta["upos"] for meta in metadata],
         }
@@ -188,6 +200,9 @@ class MultiviewParserHead(Head):
         head_indices: torch.LongTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
+        
+        # Pass inputs to the encoder
+        encoded_text = self.encoder(encoded_text, mask)
         batch_size, _, encoding_dim = encoded_text.size()
 
         head_sentinel = self._head_sentinel.expand(batch_size, 1, encoding_dim)
@@ -241,7 +256,7 @@ class MultiviewParserHead(Head):
                 mask=mask,
             )
 
-        return predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll
+        return predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll, encoded_text
 
     def _construct_loss(
         self,
@@ -547,29 +562,33 @@ class MultiviewParserHead(Head):
         return new_mask
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
+        return self._attachment_scores.get_metric(reset)
+
+
+    # def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         
-        metrics = {}
-        all_uas = []
-        all_las = []
+    #     metrics = {}
+    #     all_uas = []
+    #     all_las = []
         
-        for task, scores in self._task_attachment_scores.items():
-            task_metrics = scores.get_metric(reset)
-            for key in task_metrics.keys():
-                # Store only those metrics.
-                if key in ['UAS', 'LAS', 'loss']:
-                    metrics["{}_{}".format(key, task)] = task_metrics[key]
+    #     for task, scores in self._task_attachment_scores.items():
+    #         task_metrics = scores.get_metric(reset)
+    #         for key in task_metrics.keys():
+    #             # Store only those metrics.
+    #             if key in ['UAS', 'LAS', 'loss']:
+    #                 metrics["{}".format(key)] = task_metrics[key]
 
-            # Include in the average only languages that should count for early stopping.
-            #if task in self._langs_for_early_stop:
-            all_uas.append(metrics["UAS_{}".format(task)])
-            all_las.append(metrics["LAS_{}".format(task)])
+    #         # Include in the average only languages that should count for early stopping.
+    #         #if task in self._langs_for_early_stop:
+    #         all_uas.append(metrics["UAS"])
+    #         all_las.append(metrics["LAS"])
 
-        # if self._langs_for_early_stop:
-        metrics.update({
-                "UAS_AVG": numpy.mean(all_uas),
-                "LAS_AVG": numpy.mean(all_las)
-        })
+    #     # if self._langs_for_early_stop:
+    #     metrics.update({
+    #             "UAS_AVG": numpy.mean(all_uas),
+    #             "LAS_AVG": numpy.mean(all_las)
+    #     })
 
-        return metrics
+    #     return metrics
 
     default_predictor = "biaffine_dependency_parser"

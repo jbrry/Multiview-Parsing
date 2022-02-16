@@ -59,6 +59,7 @@ class MultiviewMetaParserHead(Head):
         pos_tag_embedding: Embedding = None,
         use_mst_decoding_for_validation: bool = True,
         use_cross_stitch: bool = False,
+        input_text_has_root: bool = True,
         dropout: float = 0.0,
         initializer: InitializerApplicator = InitializerApplicator(),
         **kwargs,
@@ -102,6 +103,8 @@ class MultiviewMetaParserHead(Head):
         self._head_sentinel = torch.nn.Parameter(
             torch.randn([1, 1, meta_encoder.get_output_dim()])
         )
+        # if the input text comes from another parser, it should already have a representation for ROOT.
+        self.input_text_has_root = input_text_has_root
 
         check_dimensions_match(
             tag_representation_dim,
@@ -137,31 +140,25 @@ class MultiviewMetaParserHead(Head):
 
     def forward(
         self,  # type: ignore
-        encoded_text,
+        other_module_inputs,
         task,
         mask: torch.BoolTensor,
         metadata: List[Dict[str, Any]],
         upos: torch.LongTensor = None,
         lemmas: torch.LongTensor = None,
-        upos_encoded_representation: torch.FloatTensor = None,
-        xpos_encoded_representation: torch.FloatTensor = None,
-        feats_encoded_representation: torch.FloatTensor = None,
         head_tags: torch.LongTensor = None,
         head_indices: torch.LongTensor = None,
     ) -> Dict[str, torch.Tensor]:
 
-        first_view_encoded_text = encoded_text[self._first_encoded_text_source]
-        second_view_encoded_text = encoded_text[self._second_encoded_text_source]
-
         batch_task = task[0]
+
+        first_view_encoded_text = other_module_inputs[f"{batch_task}_{self._first_encoded_text_source}"] # this will change based on the task
+        second_view_encoded_text = other_module_inputs[self._second_encoded_text_source]
 
         predicted_heads, predicted_head_tags, mask, arc_nll, tag_nll = self._parse(
             first_view_encoded_text,
             second_view_encoded_text,
             mask,
-            upos_encoded_representation,
-            xpos_encoded_representation,
-            feats_encoded_representation,
             head_tags,
             head_indices,
         )
@@ -265,16 +262,20 @@ class MultiviewMetaParserHead(Head):
             # inputs = torch.sum(x, dim=0)
         else:
             inputs = torch.cat([first_view_encoded_text, second_view_encoded_text], -1)
-        # inputs = self._dropout(inputs)
+        
+        batch_size, _, encoding_dim = inputs.size()
+
+        # normally an artificial vector has been added for the root by the other modules
+        if not self.input_text_has_root:
+            head_sentinel = self._head_sentinel.expand(batch_size, 1, encoding_dim)
+            # Concatenate the head sentinel onto the sentence representation.
+            encoded_text = torch.cat([head_sentinel, encoded_text], 1)
+        
+        mask = torch.cat([mask.new_ones(batch_size, 1), mask], 1)
 
         # Pass inputs to the encoder
         encoded_text = self.meta_encoder(inputs, mask)
-        batch_size, _, encoding_dim = encoded_text.size()
-
-        head_sentinel = self._head_sentinel.expand(batch_size, 1, encoding_dim)
-        # Concatenate the head sentinel onto the sentence representation.
-        encoded_text = torch.cat([head_sentinel, encoded_text], 1)
-        mask = torch.cat([mask.new_ones(batch_size, 1), mask], 1)
+        
         if head_indices is not None:
             head_indices = torch.cat(
                 [head_indices.new_zeros(batch_size, 1), head_indices], 1
