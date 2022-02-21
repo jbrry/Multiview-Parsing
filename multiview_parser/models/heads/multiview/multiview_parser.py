@@ -100,6 +100,7 @@ class MultiviewParserHead(Head):
         self.use_mst_decoding_for_validation = use_mst_decoding_for_validation
 
         tags = self.vocab.get_token_to_index_vocabulary("upos")
+        self.ls = self.vocab.get_token_to_index_vocabulary("head_tags")
         punctuation_tag_indices = {
             tag: index for tag, index in tags.items() if tag in POS_TO_IGNORE
         }
@@ -109,8 +110,6 @@ class MultiviewParserHead(Head):
             "Ignoring words with these POS tags for evaluation."
         )
 
-        # self._task_attachment_scores: Dict[
-        #         str, AttachmentScores] = defaultdict(AttachmentScores)
         self._attachment_scores = AttachmentScores()
 
         initializer(self)
@@ -172,7 +171,6 @@ class MultiviewParserHead(Head):
     def make_output_human_readable(
         self, output_dict: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
-
         head_tags = output_dict.pop("head_tags").cpu().detach().numpy()
         heads = output_dict.pop("heads").cpu().detach().numpy()
         mask = output_dict.pop("mask")
@@ -199,7 +197,6 @@ class MultiviewParserHead(Head):
         head_tags: torch.LongTensor = None,
         head_indices: torch.LongTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-
         
         # Pass inputs to the encoder
         encoded_text = self.encoder(encoded_text, mask)
@@ -237,7 +234,6 @@ class MultiviewParserHead(Head):
                 head_tag_representation, child_tag_representation, attended_arcs, mask
             )
         if head_indices is not None and head_tags is not None:
-
             arc_nll, tag_nll = self._construct_loss(
                 head_tag_representation=head_tag_representation,
                 child_tag_representation=child_tag_representation,
@@ -564,31 +560,4 @@ class MultiviewParserHead(Head):
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         return self._attachment_scores.get_metric(reset)
 
-
-    # def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        
-    #     metrics = {}
-    #     all_uas = []
-    #     all_las = []
-        
-    #     for task, scores in self._task_attachment_scores.items():
-    #         task_metrics = scores.get_metric(reset)
-    #         for key in task_metrics.keys():
-    #             # Store only those metrics.
-    #             if key in ['UAS', 'LAS', 'loss']:
-    #                 metrics["{}".format(key)] = task_metrics[key]
-
-    #         # Include in the average only languages that should count for early stopping.
-    #         #if task in self._langs_for_early_stop:
-    #         all_uas.append(metrics["UAS"])
-    #         all_las.append(metrics["LAS"])
-
-    #     # if self._langs_for_early_stop:
-    #     metrics.update({
-    #             "UAS_AVG": numpy.mean(all_uas),
-    #             "LAS_AVG": numpy.mean(all_las)
-    #     })
-
-    #     return metrics
-
-    default_predictor = "biaffine_dependency_parser"
+    default_predictor = "conllu-multitask-predictor"

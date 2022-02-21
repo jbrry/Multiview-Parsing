@@ -117,15 +117,7 @@ class MultiTaskModelV2(Model):
 
         batch_task = kwargs["task"][0]
         
-        task_indices_just_for_mypy: Mapping[str, List[int]] = defaultdict(lambda: [])
-
-        for i, task in enumerate(kwargs["task"]):
-            task_indices_just_for_mypy[task].append(i)
-        
-        task_indices: Dict[str, torch.LongTensor] = {
-            task: torch.LongTensor(indices) for task, indices in task_indices_just_for_mypy.items()
-        }
-        
+ 
         backbone_arguments = self._get_arguments(kwargs, "backbone")
         backbone_outputs = self._backbone(**backbone_arguments)
 
@@ -207,13 +199,16 @@ class MultiTaskModelV2(Model):
     def make_output_human_readable(
         self, output_dict: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
+        # if not output_dict:
+        #     return
+
         output_dict = self._backbone.make_output_human_readable(output_dict)
-        for head_name, head in self._heads.items():
+        for head_name in self._heads_called: # we won't have all heads here.
             head_outputs = {}
             for key, value in output_dict.items():
                 if key.startswith(head_name):
                     head_outputs[key.replace(f"{head_name}_", "")] = value
-            readable_head_outputs = head.make_output_human_readable(head_outputs)
+            readable_head_outputs = self._heads[head_name].make_output_human_readable(head_outputs)
             for key, value in readable_head_outputs.items():
                 output_dict[f"{head_name}_{key}"] = value
         return output_dict

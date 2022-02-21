@@ -1,0 +1,1 @@
+from multiview_parser.models.multitask_v2 import MultiTaskModelV2

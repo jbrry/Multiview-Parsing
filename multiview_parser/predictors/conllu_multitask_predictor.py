@@ -16,7 +16,7 @@ from allennlp.predictors.predictor import Predictor
 from allennlp.data.tokenizers.spacy_tokenizer import SpacyTokenizer
 
 
-@Predictor.register("conllu-multitask-predictor")
+@Predictor.register("conllu-multitask-predictor", exist_ok=True)
 class ConlluMultitaskPredictor(Predictor):
     """
     Predictor for CoNLL-U files.
@@ -115,6 +115,7 @@ class ConlluMultitaskPredictor(Predictor):
                       for k in self.CONLLU_FIELDS])
 
         multiword_map = None
+
         if outputs[f"{self.head_name}_multiword_ids"] is not "None":
             multiword_ids = [[id] + [int(x) for x in id.split("-")] for id in outputs[f"{self.head_name}_multiword_ids"]]
             multiword_forms = outputs[f"{self.head_name}_multiword_forms"]

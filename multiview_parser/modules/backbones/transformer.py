@@ -82,6 +82,7 @@ class TransformerBackbone(Backbone):
     def make_output_human_readable(
         self, output_dict: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
+
         if not self._output_token_strings:
             return output_dict
 
