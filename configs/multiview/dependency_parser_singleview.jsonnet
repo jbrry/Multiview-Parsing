@@ -1,16 +1,15 @@
-local transformer_model = std.extVar("MODEL_NAME");
 local max_length = 128;
 local transformer_dim = 768;
 local encoder_dim = transformer_dim;
 
-local batch_size = 16;
+local batch_size = 2;
 
 // the pretrained transformer is common to all readers
 local reader_common = {
   "token_indexers": {
     "tokens": {
       "type": "pretrained_transformer_mismatched",
-      "model_name": transformer_model,
+      "model_name": "",
       "max_length": max_length,
       "tokenizer_kwargs": {
         "do_lower_case": false,
@@ -28,31 +27,35 @@ local reader_common = {
     "readers": {
       "TBID_PLACEHOLDER": reader_common {
         "type": "universal_dependencies_all_features",
-      }
+      },     
     }
   },
-
   "train_data_path": {
-    TBID_PLACEHOLDER: std.extVar("TRAIN_DATA_PATH"),
+    "TBID_PLACEHOLDER": "",
   },
   "validation_data_path": {
-    TBID_PLACEHOLDER: std.extVar("DEV_DATA_PATH"),
+     "TBID_PLACEHOLDER": "",
   },
   "test_data_path": {
-    TBID_PLACEHOLDER: std.extVar("TEST_DATA_PATH"),
+    "TBID_PLACEHOLDER": "",
   },
 
   "model": {
     "type": "multitask_v2",
     "multiple_heads_one_data_source": true,
-    "desired_order_of_heads" : ["singleview_dependencies"],
+    "desired_order_of_heads" : "",
+    "allowed_arguments": {
+        "backbone": ["words"],
+        "TBID_PLACEHOLDER": ["encoded_text", "task", "mask", "upos", "metadata", "head_tags", "head_indices"],
+    },
+
     "backbone": {
       "type": "transformer",
         "text_field_embedder": {
           "token_embedders": {
             "tokens": {
               "type": "pretrained_transformer_mismatched",
-              "model_name": transformer_model,
+              "model_name": "",
               "max_length": max_length
             }
           }
@@ -61,7 +64,7 @@ local reader_common = {
       "input_dropout_word": 0.33,
     },
     "heads": {
-      "singleview_dependencies": {
+      "TBID_PLACEHOLDER": {
         "type": "singleview_parser",
         "encoder_dim": transformer_dim,
         "tag_representation_dim": 100,
@@ -83,7 +86,7 @@ local reader_common = {
     "grad_norm": 5.0,
     "patience": 10,
     "cuda_device": 0,
-    "validation_metric": "+singleview_dependencies_LAS_TBID_PLACEHOLDER",
+    "validation_metric": "",
     "optimizer": {
       "type": "huggingface_adamw",
       "lr": 3e-4,
@@ -97,7 +100,7 @@ local reader_common = {
     },
   },
   "evaluate_on_test": true,
-  "random_seed": std.parseInt(std.extVar("RANDOM_SEED")),
-  "numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
-  "pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
+  "random_seed": "",
+  "numpy_seed": "",
+  "pytorch_seed": "",
 }

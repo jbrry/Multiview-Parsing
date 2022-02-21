@@ -39,6 +39,12 @@ parser.add_argument(
     " multiview has an additional encoder which passes its outputs to the meta view.",
 )
 parser.add_argument(
+    "--head-type",
+    choices=["dependencies"],
+    type=str,
+    help="Head type: so far we just consider dependencies, but this could be POS etc."
+)
+parser.add_argument(
     "--do-lower-case",
     default=False,
     action="store_true",
@@ -90,11 +96,8 @@ TBID_PLACEHOLDER="TBID_PLACEHOLDER"
 
 args = parser.parse_args()
 
-
-
 jsonnet_file = args.config
 data = json.loads(_jsonnet.evaluate_file(jsonnet_file))
-print(data)
 
 basename = os.path.basename(args.config)
 dirname = os.path.dirname(args.config)
@@ -112,14 +115,11 @@ else:
     metadata_string = ""
 
 run_name = original_json_file[0] + f"-{model_identifier}-" + "-".join(args.tbids) + metadata_string + original_json_file[1]
-print(run_name)
 
 logdir = f"logs/dependency_parsing_multiview/{run_name}"
 
 dest.append(run_name)
 dest_file = "/".join(dest)
-
-print(dest_file)
 
 if not os.path.exists(dest_dir):
     os.makedirs(dest_dir)
@@ -152,7 +152,7 @@ for i, tbid in enumerate(args.tbids, start=1):
             # allowed arguments
             tmp_allowed_arguments = {}
             placeholder_value = tmp_data["model"]["allowed_arguments"][TBID_PLACEHOLDER]
-            tmp_allowed_arguments[tbid] = placeholder_value
+            tmp_allowed_arguments[f"{tbid}_{args.head_type}"] = placeholder_value
             data["model"]["allowed_arguments"].update(tmp_allowed_arguments)
 
             # delete placeholder
@@ -163,18 +163,22 @@ for i, tbid in enumerate(args.tbids, start=1):
             data["model"]["backbone"]["text_field_embedder"]["token_embedders"]["tokens"]["model_name"] = args.pretrained_model_name
 
 
+            if args.model_type == "singleview":
+                data["model"]["desired_order_of_heads"] = [f"{tbid}_{args.head_type}"]
+
         elif k == "heads":
             # make a fresh copy of the original data, so changes aren't reflected in the first dict
             tmp_data = copy.deepcopy(data)
             tmp_heads = {}
             # access the placeholder object
-            placeholder = tmp_data["model"]["heads"][TBID_PLACEHOLDER]
-            tmp_heads = {tbid: placeholder}
+            placeholder_value = tmp_data["model"]["heads"][TBID_PLACEHOLDER]
+            tmp_heads[f"{tbid}_{args.head_type}"] = placeholder_value
             data["model"]["heads"].update(tmp_heads)
 
-            
-            
-    
+            # delete placeholder
+            if i == nb_tbids:
+                del data["model"]["heads"][TBID_PLACEHOLDER]
+
             # if args.use_cross_stitch:
             #     # cross-stitch layer is in the meta head
             #     head_dict["multiview_meta_dependencies"]["use_cross_stitch"] = bool(f"{args.use_cross_stitch}")
@@ -189,6 +193,12 @@ for i, tbid in enumerate(args.tbids, start=1):
             tmp_train = {tbid: f"{treebank_path}/{_file}"}
             data["train_data_path"].update(tmp_train)
 
+            # delete placeholder
+            if i == nb_tbids:
+                del data["train_data_path"][TBID_PLACEHOLDER]
+                del data["validation_data_path"][TBID_PLACEHOLDER]
+                del data["test_data_path"][TBID_PLACEHOLDER]
+
         elif k == "validation_data_path":
             _file = f"{tbid}-ud-dev.conllu"
             tmp_dev = {tbid: f"{treebank_path}/{_file}"}
@@ -199,14 +209,12 @@ for i, tbid in enumerate(args.tbids, start=1):
             tmp_test = {tbid: f"{treebank_path}/{_file}"}
             data["test_data_path"].update(tmp_test)
 
-#         elif k == "validation_metric":
-
-#             if args.model_type == "source":
-#                 metric = f"+multi_dependencies_LAS_{tbid}"
-#             elif args.model_type == "meta":
-#                 metric = f"+meta_dependencies_LAS_AVG"
-
-#             data["trainer"]["validation_metric"] = metric
+        elif k == "validation_metric":
+            if args.model_type == "singleview":
+                metric = f"+{tbid}_dependencies_LAS"
+            elif args.model_type == "multiview":
+                metric = f"+meta_dependencies_LAS"
+            data["trainer"]["validation_metric"] = metric
 
         elif k == "random_seed":
             data["random_seed"] = args.random_seed
@@ -215,66 +223,12 @@ for i, tbid in enumerate(args.tbids, start=1):
         elif k == "pytorch_seed":
             data["pytorch_seed"] = args.random_seed[:-2]
 
-#     # delete placeholder entries at last tbid
-#     if i == nb_tbids:
-#         # dataset reader should encompass indexers
-#         del data["dataset_reader"]["readers"]["TBID_PLACEHOLDER"]
-#         try:
-#             tmp_dict = data["model"]["backbone"]["mono_embedders"]
-#             del data["model"]["backbone"]["mono_embedders"]["TBID_PLACEHOLDER"]
-#         except KeyError:
-#             pass
-
-#         # mono encoders
-#         try:
-#             tmp_dict = data["model"]["backbone"]["mono_encoders"]
-#             del data["model"]["backbone"]["mono_encoders"]["TBID_PLACEHOLDER"]
-#         except KeyError:
-#             pass
-
-#         # token-char
-#         try:
-#             tmp_dict = data["model"]["backbone"]["mono_token_character_embedders"]
-#             del data["model"]["backbone"]["mono_token_character_embedders"][
-#                 "TBID_PLACEHOLDER"
-#             ]
-#         except KeyError:
-#             pass
-
-#         try:
-#             tmp_dict = data["model"]["backbone"]["mono_token_character_encoders"]
-#             del data["model"]["backbone"]["mono_token_character_encoders"][
-#                 "TBID_PLACEHOLDER"
-#             ]
-#         except KeyError:
-#             pass
-
-#         # sentence-char
-#         try:
-#             tmp_dict = data["model"]["backbone"]["mono_sentence_character_embedders"]
-#             del data["model"]["backbone"]["mono_sentence_character_embedders"][
-#                 "TBID_PLACEHOLDER"
-#             ]
-#         except KeyError:
-#             pass
-
-#         try:
-#             tmp_dict = data["model"]["backbone"]["mono_sentence_character_encoders"]
-#             del data["model"]["backbone"]["mono_sentence_character_encoders"][
-#                 "TBID_PLACEHOLDER"
-#             ]
-#         except KeyError:
-#             pass
-
-#         # filepaths
-#         del data["train_data_path"]["TBID_PLACEHOLDER"]
-#         del data["validation_data_path"]["TBID_PLACEHOLDER"]
-#         del data["test_data_path"]["TBID_PLACEHOLDER"]
-
 # write out custom config
 with open(f"{dest_file}", "w") as fo:
     json.dump(data, fo, indent=2)
+    print(json.dumps(data, indent = 2))
 
-# cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package meta_parser"
-# print("Launching training script!")
-# rcmd = subprocess.call(cmd, shell=True)
+
+cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_parser"
+print("\nLaunching training script!")
+rcmd = subprocess.call(cmd, shell=True)

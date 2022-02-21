@@ -126,13 +126,16 @@ class MultiTaskModelV2(Model):
         
         loss = None
 
-        fixed_task_heads = ["multi_dependencies", "meta_dependencies"]
-        task_heads = [f"{batch_task}_dependencies"] + fixed_task_heads
-        assert len(task_heads) == 3 # tb, sh, meta
-        assert task_heads[-1] == "meta_dependencies"
+
+
+
+        #fixed_task_heads = ["multi_dependencies", "meta_dependencies"]
+        #task_heads = [f"{batch_task}_dependencies"] + fixed_task_heads
+        #assert len(task_heads) == 3 # tb, sh, meta
+        #assert task_heads[-1] == "meta_dependencies"
 
     
-        for head_name in task_heads:
+        for head_name in self._heads:
             combined_arguments = {**backbone_outputs, **kwargs, **outputs} # 20 
             head_arguments = self._get_arguments(combined_arguments, head_name) # 7
 
