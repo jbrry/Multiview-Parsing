@@ -15,7 +15,6 @@ import glob
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--name", default="", type=str, help="Log dir name")
 parser.add_argument(
     "--config",
     default="configs/multiview/dependency_parser_multiview.jsonnet",
@@ -23,17 +22,23 @@ parser.add_argument(
     help="Configuration file",
 )
 parser.add_argument(
-    "--dataset_dir",
+    "--dataset-dir",
     default="data/ud-treebanks-v2.8",
     type=str,
     help="The path containing all UD treebanks",
+)
+parser.add_argument(
+    "--dataset-dir-concatenated",
+    default="data/ud-treebanks-v2.8-concatenated",
+    type=str,
+    help="The path containing concatenated UD treebanks",
 )
 parser.add_argument(
     "--tbids", default=[], type=str, nargs="+", help="Treebank ids to include"
 )
 parser.add_argument(
     "--model-type",
-    choices=["singleview", "multiview"],
+    choices=["singleview", "singleview-concat", "multiview"],
     type=str,
     help="Model type: singleview is a single parsing head,"
     " multiview has an additional encoder which passes its outputs to the meta view.",
@@ -114,7 +119,7 @@ if args.metadata:
 else:
     metadata_string = ""
 
-run_name = original_json_file[0] + f"-{model_identifier}-" + "-".join(args.tbids) + metadata_string + "-" + args.random_seed
+run_name = original_json_file[0] + f"-{model_identifier}-" + "+".join(args.tbids) + metadata_string + "-" + args.random_seed
 config_name = run_name + original_json_file[1]
 
 logdir = f"logs/dependency_parsing_multiview/{run_name}"
@@ -163,7 +168,6 @@ for i, tbid in enumerate(args.tbids, start=1):
             # backbone
             data["model"]["backbone"]["text_field_embedder"]["token_embedders"]["tokens"]["model_name"] = args.pretrained_model_name
 
-
             if args.model_type == "singleview":
                 data["model"]["desired_order_of_heads"] = [f"{tbid}_{args.head_type}"]
 
@@ -188,7 +192,13 @@ for i, tbid in enumerate(args.tbids, start=1):
         elif k == "train_data_path":
             _file = f"{tbid}-ud-train.conllu"
             # we will just get the main paths once
-            pathname = os.path.join(args.dataset_dir, "*", _file)
+            
+            if args.model_type == "singleview-concat":
+                print("@@@@ CONCAT @@@@")
+                pathname = os.path.join(args.dataset_dir_concatenated, "*", _file)
+            else:
+                pathname = os.path.join(args.dataset_dir, "*", _file)
+
             train_path = glob.glob(pathname).pop()
             treebank_path = os.path.dirname(train_path)
             tmp_train = {tbid: f"{treebank_path}/{_file}"}
@@ -211,7 +221,7 @@ for i, tbid in enumerate(args.tbids, start=1):
             data["test_data_path"].update(tmp_test)
 
         elif k == "validation_metric":
-            if args.model_type == "singleview":
+            if args.model_type == "singleview" or "singleview-concat":
                 metric = f"+{tbid}_dependencies_LAS"
             elif args.model_type == "multiview":
                 metric = f"+meta_dependencies_LAS"
@@ -237,38 +247,84 @@ cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_pa
 print("\nLaunching training script!")
 rcmd = subprocess.call(cmd, shell=True)
 
+
 # 2) predict
 results_dir = "results"
-if not os.path.exists(dest_dir):
-    os.makedirs(dest_dir)
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
 
-for tbid in args.tbids:
-    initial = '{"head_name": "foo_deps"}'
-    initial_json = json.loads(initial)
-    initial_json["head_name"] = f"{tbid}_dependencies"
-    json_string = json.dumps(initial_json)
-    
-    outfile = f"{results_dir}/{run_name}-ud-dev.conllu"
-    result_evalfile = f"{results_dir}/{run_name}-ud-dev-eval.txt"
-    target_file = data["validation_data_path"][tbid]
+def predict_singleview():
+    """Returns the command to run the predictor with the appropriate inputs/outputs."""
+    for tbid in args.tbids:
+        predictor_args = '{"head_name": ""}'
+        predictor_json = json.loads(predictor_args)
+        predictor_json["head_name"] = f"{tbid}_dependencies"
+        predictor_json_string = json.dumps(predictor_json)
+        
+        outfile = f"{results_dir}/{run_name}-ud-dev.conllu"
+        result_evalfile = f"{results_dir}/{run_name}-ud-dev-eval.txt"
+        target_file = data["validation_data_path"][tbid]
 
-    cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
-        --output-file {outfile} \
-        --predictor conllu-multitask-predictor \
-        --include-package multiview_parser \
-        --use-dataset-reader \
-        --predictor-args '{json_string}' \
-        --multitask-head {tbid} \
-        --batch-size 32 \
-        --cuda-device 0 \
-        --silent"
+        cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
+            --output-file {outfile} \
+            --predictor conllu-multitask-predictor \
+            --include-package multiview_parser \
+            --use-dataset-reader \
+            --predictor-args '{predictor_json_string}' \
+            --multitask-head {tbid} \
+            --batch-size 32 \
+            --cuda-device 0 \
+            --silent"
 
-    print(f"predicting {tbid}")
-    rcmd = subprocess.call(cmd, shell=True)
+        print(f"predicting {tbid}")
+        rcmd = subprocess.call(cmd, shell=True)
+        cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
+        print(f"evaluating {tbid}")
+        rcmd = subprocess.call(cmd, shell=True)
 
-    cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
-    print(f"evaluating {tbid}")
-    rcmd = subprocess.call(cmd, shell=True)
+def predict_singleview_concat():
+    """
+    Returns the command to run the predictor with the appropriate inputs/outputs.
+    Has some extra logic to loop over concatenated tbids to predict on the individual tbids.
+    """
+    for tbid in args.tbids:
+        predictor_args = '{"head_name": ""}'
+        predictor_json = json.loads(predictor_args)
+        predictor_json["head_name"] = f"{tbid}_dependencies"
+        predictor_json_string = json.dumps(predictor_json)
+
+        for sub_tbid in tbid.split("+"):
+            outfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev.conllu"
+            result_evalfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev-eval.txt"
+
+            train_file = f"{sub_tbid}-ud-train.conllu" # may not always have dev
+            # we will just get the main paths once
+            pathname = os.path.join(args.dataset_dir, "*", train_file) # NOTE: using non-concat dir
+            train_path = glob.glob(pathname).pop()
+            treebank_path = os.path.dirname(train_path)
+            target_file =  f"{treebank_path}/{sub_tbid}-ud-dev.conllu"
+
+            cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
+                --output-file {outfile} \
+                --predictor conllu-multitask-predictor \
+                --include-package multiview_parser \
+                --use-dataset-reader \
+                --predictor-args '{predictor_json_string}' \
+                --multitask-head {tbid} \
+                --batch-size 32 \
+                --cuda-device 0 \
+                --silent"
+
+            print(f"predicting {tbid}")
+            rcmd = subprocess.call(cmd, shell=True)
+            cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
+            print(f"evaluating {tbid}")
+            rcmd = subprocess.call(cmd, shell=True)
+
+if args.model_type  == "singleview":
+    predict_singleview()
+elif args.model_type == "singleview-concat":
+    predict_singleview_concat()
 
 # 3) tar the model directory (include directory so it gets stored there?)
 cmd = f"tar -cvzf {logdir}.tar.gz {logdir}/"
