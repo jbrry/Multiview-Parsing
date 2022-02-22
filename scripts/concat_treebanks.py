@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("output_dir", type=str, help="The path to output the concatenated files")
-parser.add_argument("--dataset_dir", default="data/ud-treebanks-v2.8", type=str,
+parser.add_argument("--output-dir", type=str, help="The path to output the concatenated files")
+parser.add_argument("--dataset-dir", default="data/ud-treebanks-v2.8", type=str,
                     help="The path containing all UD treebanks")
-parser.add_argument("--treebank_ids", default=[], type=str, nargs="+",
+parser.add_argument("--treebank-ids", default=[], type=str, nargs="+",
                     help="Specify a list of treebank IDs to use")
 
 args = parser.parse_args()
@@ -39,7 +39,7 @@ def get_ud_treebank_files(dataset_dir: str, treebank_ids: List[str] = None) -> D
     
     for tbid in treebank_ids:
         train_file = tbid + "-ud-train.conllu"
-        pathname = os.path.join(args.dataset_dir, "*", train_file)
+        pathname = os.path.join(dataset_dir, "*", train_file)
         train_path = glob.glob(pathname).pop()
         treebank_path = os.path.dirname(train_path)
         treebank = os.path.basename(treebank_path)

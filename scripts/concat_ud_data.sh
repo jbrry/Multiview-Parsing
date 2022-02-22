@@ -14,4 +14,4 @@ if [[ ! -d "${DATASET_DIR}-concatenated" ]]; then
     mkdir -p "${DATASET_DIR}-concatenated"
 fi
 
-python scripts/concat_treebanks.py ${OUTDIR} --dataset_dir ${DATASET_DIR} --treebank_ids ${TBIDS}
+python scripts/concat_treebanks.py --output-dir ${OUTDIR} --dataset-dir ${DATASET_DIR} --treebank-ids ${TBIDS}
