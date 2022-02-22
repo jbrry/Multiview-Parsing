@@ -102,8 +102,8 @@ class SingleViewParserHead(Head):
             "Ignoring words with these POS tags for evaluation."
         )
 
-        self._task_attachment_scores: Dict[
-                str, AttachmentScores] = defaultdict(AttachmentScores)
+        self._attachment_scores = AttachmentScores()
+
         initializer(self)
 
     def forward(
@@ -131,7 +131,7 @@ class SingleViewParserHead(Head):
             # We calculate attachment scores for the whole sentence
             # but excluding the symbolic ROOT token at the start,
             # which is why we start from the second element in the sequence.
-            self._task_attachment_scores[batch_task](
+            self._attachment_scores(
                 predicted_heads[:, 1:],
                 predicted_head_tags[:, 1:],
                 head_indices,
@@ -464,28 +464,8 @@ class SingleViewParserHead(Head):
         heads = []
         head_tags = []
 
-        # import sys
-        # sys.path.append('/home/jbarry/spinning-storage/jbarry/Multiview-Parsing/spanningtrees')
-        # from spanningtrees.graph import Graph
-        # from spanningtrees.mst import MST
-        # operating on the sentence level
-        # (num_tags, seq, seq)
         for energy, length in zip(batch_energy.detach().cpu(), lengths):
             scores, tag_ids = energy.max(dim=0)
-            #print(len(scores))
-            #print(len(scores[0]))
-            #print(scores.shape)
-            #x = scores.numpy()
-            #print(x)
-            #print(x.shape)
-            #print(tag_ids)
-            
-            ###
-            #G = Graph.build(scores.numpy()) this requires child to head scores, but we have the opposite at the moment.
-            #mst_constrained = MST(G, True).mst()
-            #print(mst_constrained.to_array())
-            ####
-
             # Although we need to include the root node so that the MST includes it,
             # we do not want any word to be the parent of the root node.
             # Here, we enforce this by setting the scores for all word -> ROOT edges
@@ -500,7 +480,6 @@ class SingleViewParserHead(Head):
                 logger.debug(
                     "Found multi-root, setting first root as head of other roots."
                 )
-
                 root_heads = [seq for seq, head in enumerate(instance_heads) if head == 0]
                 for seq in root_heads[1:]:
                     instance_heads[seq] = root_heads[0]
@@ -593,29 +572,6 @@ class SingleViewParserHead(Head):
         return new_mask
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        
-        metrics = {}
-        all_uas = []
-        all_las = []
-        
-        for task, scores in self._task_attachment_scores.items():
-            task_metrics = scores.get_metric(reset)
-            for key in task_metrics.keys():
-                # Store only those metrics.
-                if key in ['UAS', 'LAS', 'loss']:
-                    metrics["{}_{}".format(key, task)] = task_metrics[key]
+        return self._attachment_scores.get_metric(reset)
 
-            # Include in the average only languages that should count for early stopping.
-            #if task in self._langs_for_early_stop:
-            all_uas.append(metrics["UAS_{}".format(task)])
-            all_las.append(metrics["LAS_{}".format(task)])
-
-        # if self._langs_for_early_stop:
-        metrics.update({
-                "UAS_AVG": numpy.mean(all_uas),
-                "LAS_AVG": numpy.mean(all_las)
-        })
-
-        return metrics
-
-    default_predictor = "biaffine_dependency_parser"
+    default_predictor = "conllu-multitask-predictor"

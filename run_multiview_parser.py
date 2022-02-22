@@ -1,5 +1,5 @@
 """
-Script to launch the meta parser.
+Script to launch the multiview parser.
 """
 
 import os
@@ -114,11 +114,12 @@ if args.metadata:
 else:
     metadata_string = ""
 
-run_name = original_json_file[0] + f"-{model_identifier}-" + "-".join(args.tbids) + metadata_string + original_json_file[1]
+run_name = original_json_file[0] + f"-{model_identifier}-" + "-".join(args.tbids) + metadata_string + "-" + args.random_seed
+config_name = run_name + original_json_file[1]
 
 logdir = f"logs/dependency_parsing_multiview/{run_name}"
 
-dest.append(run_name)
+dest.append(config_name)
 dest_file = "/".join(dest)
 
 if not os.path.exists(dest_dir):
@@ -226,9 +227,61 @@ for i, tbid in enumerate(args.tbids, start=1):
 # write out custom config
 with open(f"{dest_file}", "w") as fo:
     json.dump(data, fo, indent=2)
-    print(json.dumps(data, indent = 2))
+    print(json.dumps(data, indent=2))
 
 
+# Go through the steps to train, predict, evaluate, upload and clean up results.
+
+# 1) train the file
 cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_parser"
 print("\nLaunching training script!")
+rcmd = subprocess.call(cmd, shell=True)
+
+# 2) predict
+results_dir = "results"
+if not os.path.exists(dest_dir):
+    os.makedirs(dest_dir)
+
+for tbid in args.tbids:
+    initial = '{"head_name": "foo_deps"}'
+    initial_json = json.loads(initial)
+    initial_json["head_name"] = f"{tbid}_dependencies"
+    json_string = json.dumps(initial_json)
+    
+    outfile = f"{results_dir}/{run_name}-ud-dev.conllu"
+    result_evalfile = f"{results_dir}/{run_name}-ud-dev-eval.txt"
+    target_file = data["validation_data_path"][tbid]
+
+    cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
+        --output-file {outfile} \
+        --predictor conllu-multitask-predictor \
+        --include-package multiview_parser \
+        --use-dataset-reader \
+        --predictor-args '{json_string}' \
+        --multitask-head {tbid} \
+        --batch-size 32 \
+        --cuda-device 0 \
+        --silent"
+
+    print(f"predicting {tbid}")
+    rcmd = subprocess.call(cmd, shell=True)
+
+    cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
+    print(f"evaluating {tbid}")
+    rcmd = subprocess.call(cmd, shell=True)
+
+# 3) tar the model directory (include directory so it gets stored there?)
+cmd = f"tar -cvzf {logdir}.tar.gz {logdir}/"
+print(f"tarring {tbid}")
+rcmd = subprocess.call(cmd, shell=True)
+
+# 4) store it on Google Drive
+GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_logs/"
+cmd = f"rclone copy {logdir}.tar.gz {GDRIVE_DEST}"
+print(f"uploading {tbid}")
+rcmd = subprocess.call(cmd, shell=True)
+
+# 5) clean-up directory
+cmd = f"rm -r {logdir} {logdir}.tar.gz"
+print(f"cleaning up")
 rcmd = subprocess.call(cmd, shell=True)

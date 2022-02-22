@@ -109,6 +109,7 @@ class ConlluMultitaskPredictor(Predictor):
 
 
     def dump_line(self, outputs: JsonDict) -> str:
+
         word_count = len([word for word in outputs[f"{self.head_name}_words"]])
 
         lines = zip(*[outputs[k] if k in outputs else ["_"] * word_count
@@ -116,7 +117,7 @@ class ConlluMultitaskPredictor(Predictor):
 
         multiword_map = None
 
-        if outputs[f"{self.head_name}_multiword_ids"] is not "None":
+        if outputs[f"{self.head_name}_multiword_ids"] != "None":
             multiword_ids = [[id] + [int(x) for x in id.split("-")] for id in outputs[f"{self.head_name}_multiword_ids"]]
             multiword_forms = outputs[f"{self.head_name}_multiword_forms"]
             multiword_map = {start: (id_, form) for (id_, start, end), form in zip(multiword_ids, multiword_forms)}
