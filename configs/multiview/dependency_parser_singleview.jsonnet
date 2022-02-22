@@ -1,8 +1,12 @@
+local num_gpus = 1;
+local gpu_batch_size = 8;
+local effective_batch_size = gpu_batch_size * num_gpus;
+local num_epochs = 50;
+local patience = 8;
+local num_gradient_accumulation_steps = 32 / effective_batch_size;
 local max_length = 128;
 local transformer_dim = 768;
 local encoder_dim = transformer_dim;
-
-local batch_size = 2;
 
 // the pretrained transformer is common to all readers
 local reader_common = {
@@ -77,15 +81,16 @@ local reader_common = {
   "data_loader": {
     "type": "multitask",
     "scheduler": {
-      "batch_size": batch_size
+      "batch_size": gpu_batch_size,
     },
     "shuffle": true,
   },
   "trainer": {
-    "num_epochs": 50,
+    "num_epochs": num_epochs,
     "grad_norm": 5.0,
-    "patience": 10,
+    "patience": patience,
     "cuda_device": 0,
+    "num_gradient_accumulation_steps": num_gradient_accumulation_steps,
     "validation_metric": "",
     "optimizer": {
       "type": "huggingface_adamw",
