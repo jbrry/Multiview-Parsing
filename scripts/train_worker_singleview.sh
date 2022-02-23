@@ -4,16 +4,11 @@
 
 test -z $1 && echo "Missing list of TBIDs (space or colon-separated)"
 test -z $1 && exit 1
-TBIDS=$(echo $1 | tr ':' ' ')
+TBID=$1
 
 test -z $2 && echo "Needs model type, singleview, singleview-concat"
 test -z $2 && exit 1
 MODEL_TYPE=$2
 
-for TBID in $TBIDS ; do
-    echo "running $TBID"
-    sbatch -J ${TBID} --gres=gpu:rtx2080ti:1 ./scripts/train_worker_singleview.sh ${TBID} ${MODEL_TYPE}
-    sleep 10
-done
-
+python run_multiview_parser.py --tbids $TBID --config configs/multiview/dependency_parser_singleview.jsonnet --model-type ${MODEL_TYPE} --head-type dependencies
 
