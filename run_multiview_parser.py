@@ -169,7 +169,14 @@ for i, tbid in enumerate(args.tbids, start=1):
             data["model"]["backbone"]["text_field_embedder"]["token_embedders"]["tokens"]["model_name"] = args.pretrained_model_name
 
             if args.model_type == "singleview":
-                data["model"]["desired_order_of_heads"] = [f"{tbid}_{args.head_type}"]
+                data["model"]["desired_order_of_heads"].append(f"{tbid}_{args.head_type}")
+            elif args.model_type == "multiview":
+                data["model"]["desired_order_of_heads"].append(f"{tbid}_{args.head_type}")
+            
+            if i == nb_tbids:
+                data["model"]["desired_order_of_heads"].append(f"multi_dependencies")
+                data["model"]["desired_order_of_heads"].append(f"meta_dependencies")
+                
 
         elif k == "heads":
             # make a fresh copy of the original data, so changes aren't reflected in the first dict
@@ -247,6 +254,8 @@ cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_pa
 print("\nLaunching training script!")
 rcmd = subprocess.call(cmd, shell=True)
 
+
+raise ValueError()
 
 # 2) predict
 results_dir = "results"
