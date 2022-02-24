@@ -9,6 +9,7 @@ import sys
 import glob
 import shutil
 import argparse
+import subprocess
 
 from collections import defaultdict
 
@@ -48,41 +49,50 @@ GROUP_TO_TBID_MAPPINGS = {
     "w-sla": ["cs_cac", "cs_fictree", "cs_pdt", "pl_lfg", "pl_pdb", "sk_snk", "hsb_ufal"],
 }
 
-# GROUP_TO_TBID_RESULTS = {
-#     "af-de-nl": None,
-#     "e-sla": None,
-#     "en": None,
-#     "es-ca": None,
-#     "finno": None,
-#     "fr": None,
-#     "indic": None,
-#     "iranian": None,
-#     "it": None,
-#     "ko": None,
-#     "n-ger": None,
-#     "old": None,
-#     "pt-gl": None,
-#     "sw-sla": None,
-#     "turkic": None,
-#     "w-sla": None,
-# }
-
 
 MODEL_TYPES = ["singleview", "singleview-concat", "multiview"]
 
+NO_DEV = ["gl_treegal", "la_perseus", "hsb_ufal", "sme_giella", "kmr_mg", "kk_ktb", "bxr_bdt", "sl_sst"]
+
+# populate results based on groups/model types
 GROUP_TO_TBID_RESULTS = {}
 for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
     GROUP_TO_TBID_RESULTS[group] = {}
     for model_type in MODEL_TYPES:
         GROUP_TO_TBID_RESULTS[group][model_type] = {}
 
-
 for filename in os.listdir(args.result_dir):
     if filename.endswith("-dev-eval.txt"):
         # parse filename into fields:
+       
         if "singleview" in filename:
+            # single-view concat
             if "+" in filename:
-                continue # skip concat for now
+                model_type = "singleview-concat"
+                filename_short = os.path.splitext(filename)[0]
+                filepath = os.path.join(args.result_dir, filename)
+
+                x = filename_short.split("-")
+                tbid = x[-4]
+                for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
+                    if tbid in tbids:
+                        
+                        if os.stat(filepath).st_size == 0:
+                            print(f"File {filename_short} is empty")
+                            if tbid in NO_DEV:
+                                GROUP_TO_TBID_RESULTS[group][model_type][tbid] = "no-dev" 
+                            else:
+                                GROUP_TO_TBID_RESULTS[group][model_type][tbid] = 0. 
+                        else:
+                            with open(filepath, 'r') as fi:
+                                for line in fi:
+                                    items = line.split("|")
+                                    if len(items) == 5:
+                                        metric = items[METRIC].strip()
+                                        if metric == "LAS":
+                                            score = items[F1SCORE].strip()
+                                            GROUP_TO_TBID_RESULTS[group][model_type][tbid] = score
+                        
             else:
                 model_type = "singleview"
                 filename_short = os.path.splitext(filename)[0]
@@ -91,12 +101,13 @@ for filename in os.listdir(args.result_dir):
                 tbid = x[4]
                 for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
                     if tbid in tbids:
-                        
                         if os.stat(filepath).st_size == 0:
-                            print('File is empty')
-                            GROUP_TO_TBID_RESULTS[group][model_type][tbid] = 0. 
+                            print(f"File {filename_short} is empty")
+                            if tbid in NO_DEV:
+                                GROUP_TO_TBID_RESULTS[group][model_type][tbid] = "no-dev" 
+                            else:
+                                GROUP_TO_TBID_RESULTS[group][model_type][tbid] = 0. 
                         else:
-                            print('File is not empty')
 
                             with open(filepath, 'r') as fi:
                                 for line in fi:
@@ -108,19 +119,43 @@ for filename in os.listdir(args.result_dir):
                                             GROUP_TO_TBID_RESULTS[group][model_type][tbid] = score     
                                         
 
+# print()
+# print(GROUP_TO_TBID_RESULTS)
+# print()
+# x=sorted(GROUP_TO_TBID_RESULTS.items())
+# print(x)
 
-print(GROUP_TO_TBID_RESULTS)
+# raise ValueError()
 
-
-import csv
-
-with open('insights.csv', 'w', newline='') as csvfile:
-    fieldnames = ['group', 'tbid'] + MODEL_TYPES
+with open('results/insights.csv', 'w', newline='') as csvfile:
+    fieldnames = ['group', 'tbid', 'singleview', 'singleview-concat'] #+ MODEL_TYPES
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
 
     for group, model_type in GROUP_TO_TBID_RESULTS.items():
-        for mt in MODEL_TYPES:
-            for tbid, score in model_type[mt].items():
-                writer.writerow({'group': group, 'tbid': tbid, mt: score})
+        tbids = model_type["singleview"].keys()
+        # write based on alphabetical order
+        for tbid in sorted(tbids):
 
+            try:
+                singleview_score = model_type["singleview"][tbid]
+            except KeyError:
+                singleview_score = 0.
+
+            try:
+                singleview_concat_score = model_type["singleview-concat"][tbid]
+            except KeyError:
+                singleview_concat_score = 0.
+
+            writer.writerow({'group': group,
+                            'tbid': tbid,
+                            'singleview': singleview_score,
+                            'singleview-concat': singleview_concat_score,
+                            })
+ 
+
+# 4) store it on Google Drive
+GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_results/Insights"
+cmd = f"rclone copy results/insights.csv {GDRIVE_DEST}"
+print(f"uploading csv")
+rcmd = subprocess.call(cmd, shell=True)
