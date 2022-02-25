@@ -34,6 +34,12 @@ parser.add_argument(
     help="The path containing concatenated UD treebanks",
 )
 parser.add_argument(
+    "--results-dir",
+    default="results",
+    type=str,
+    help="Where to write results",
+)
+parser.add_argument(
     "--tbids", default=[], type=str, nargs="+", help="Treebank ids to include"
 )
 parser.add_argument(
@@ -132,195 +138,273 @@ if not os.path.exists(dest_dir):
 
 nb_tbids = len(args.tbids)
 
-print(f"creating config {run_name}")
-for i, tbid in enumerate(args.tbids, start=1):
-    print(f"=== {tbid} ===")
-    for k in args.fields:
-        if k == "dataset_reader":
-            # make a fresh copy of the original data, so changes aren't reflected in the first dict
-            tmp_data = copy.deepcopy(data)
-            tmp_reader = {}
-            # access the placeholder object
-            placeholder_value = tmp_data["dataset_reader"]["readers"][TBID_PLACEHOLDER]
-            # create tbid reader object and set attributes
-            tmp_reader[tbid] = placeholder_value
-            tmp_reader[tbid]["token_indexers"]["tokens"]["model_name"] = args.pretrained_model_name
+
+class ExperimentBuilder:
+    def __init__(self, args):
+        self.args = args
+        self.tbids = args.tbids
+        self.model_type = args.model_type
+        self.head_type = args.head_type
+        self.fields = args.fields
+        self.pretrained_model_name = args.pretrained_model_name
+        self.dataset_dir = args.dataset_dir
+        self.dataset_dir_concatenated = args.dataset_dir_concatenated
+        self.random_seed = args.random_seed
+        self.results_dir = args.results_dir
+
+        if not os.path.exists(self.results_dir):
+            os.makedirs(self.results_dir)
+
+
+    def prepare_and_run_experiment(self):
+        print(f"creating config {run_name}")
+
+        for i, tbid in enumerate(self.tbids, start=1):
             
-            data["dataset_reader"]["readers"].update(tmp_reader)
+            print(f"=== {tbid} ===")
+            for k in self.fields:
+                if k == "dataset_reader":
+                    # make a fresh copy of the original data, so changes aren't reflected in the first dict
+                    tmp_data = copy.deepcopy(data)
+                    tmp_reader = {}
+                    # access the placeholder object
+                    placeholder_value = tmp_data["dataset_reader"]["readers"][TBID_PLACEHOLDER]
+                    # create tbid reader object and set attributes
+                    tmp_reader[tbid] = placeholder_value
+                    tmp_reader[tbid]["token_indexers"]["tokens"]["model_name"] = self.pretrained_model_name
+                    
+                    data["dataset_reader"]["readers"].update(tmp_reader)
 
-            # delete placeholder
-            if i == nb_tbids:
-                del data["dataset_reader"]["readers"][TBID_PLACEHOLDER]
+                    # delete placeholder
+                    if i == nb_tbids:
+                        del data["dataset_reader"]["readers"][TBID_PLACEHOLDER]
 
-        elif k == "model":
-            tmp_model = copy.deepcopy(data)
+                elif k == "model":
+                    tmp_model = copy.deepcopy(data)
 
-            # allowed arguments
-            tmp_allowed_arguments = {}
-            placeholder_value = tmp_data["model"]["allowed_arguments"][TBID_PLACEHOLDER]
-            tmp_allowed_arguments[f"{tbid}_{args.head_type}"] = placeholder_value
-            data["model"]["allowed_arguments"].update(tmp_allowed_arguments)
+                    # allowed arguments
+                    tmp_allowed_arguments = {}
+                    placeholder_value = tmp_data["model"]["allowed_arguments"][TBID_PLACEHOLDER]
+                    tmp_allowed_arguments[f"{tbid}_{self.head_type}"] = placeholder_value
+                    data["model"]["allowed_arguments"].update(tmp_allowed_arguments)
 
-            # delete placeholder
-            if i == nb_tbids:
-                del data["model"]["allowed_arguments"][TBID_PLACEHOLDER]
+                    # delete placeholder
+                    if i == nb_tbids:
+                        del data["model"]["allowed_arguments"][TBID_PLACEHOLDER]
 
-            # backbone
-            data["model"]["backbone"]["text_field_embedder"]["token_embedders"]["tokens"]["model_name"] = args.pretrained_model_name
+                    # backbone
+                    data["model"]["backbone"]["text_field_embedder"]["token_embedders"]["tokens"]["model_name"] = self.pretrained_model_name
 
-            if args.model_type == "singleview":
-                data["model"]["desired_order_of_heads"].append(f"{tbid}_{args.head_type}")
-            elif args.model_type == "multiview":
-                data["model"]["desired_order_of_heads"].append(f"{tbid}_{args.head_type}")
+                    if self.model_type == "singleview":
+                        data["model"]["desired_order_of_heads"].append(f"{tbid}_{args.head_type}")
+                    elif self.model_type == "multiview":
+                        data["model"]["desired_order_of_heads"].append(f"{tbid}_{args.head_type}")
+                    
+                        if i == nb_tbids:
+                            data["model"]["desired_order_of_heads"].append(f"multi_dependencies")
+                            data["model"]["desired_order_of_heads"].append(f"meta_dependencies")
+                        
+                elif k == "heads":
+                    # make a fresh copy of the original data, so changes aren't reflected in the first dict
+                    tmp_data = copy.deepcopy(data)
+                    tmp_heads = {}
+                    # access the placeholder object
+                    placeholder_value = tmp_data["model"]["heads"][TBID_PLACEHOLDER]
+                    tmp_heads[f"{tbid}_{args.head_type}"] = placeholder_value
+                    data["model"]["heads"].update(tmp_heads)
+
+                    # delete placeholder
+                    if i == nb_tbids:
+                        del data["model"]["heads"][TBID_PLACEHOLDER]
+
+                elif k == "train_data_path":
+                    _file = f"{tbid}-ud-train.conllu"
+                    # we will just get the main paths once
+                    if self.model_type == "singleview-concat":
+                        pathname = os.path.join(self.dataset_dir_concatenated, "*", _file)
+                    else:
+                        pathname = os.path.join(self.dataset_dir, "*", _file)
+
+                    train_path = glob.glob(pathname).pop()
+                    treebank_path = os.path.dirname(train_path)
+                    
+                    if os.path.isfile(f"{treebank_path}/{_file}"):
+                        tmp_train = {tbid: f"{treebank_path}/{_file}"}
+                        data["train_data_path"].update(tmp_train)
+
+                    # delete placeholder
+                    if i == nb_tbids:
+                        del data["train_data_path"][TBID_PLACEHOLDER]
+                        del data["validation_data_path"][TBID_PLACEHOLDER]
+                        del data["test_data_path"][TBID_PLACEHOLDER]
+
+                        if not data["train_data_path"]:
+                            raise ValueError("No training data")
+
+                        if not data["validation_data_path"]:
+                            del data["validation_data_path"]
+                            # must also set metric to training score?
+
+                elif k == "validation_data_path":
+                    _file = f"{tbid}-ud-dev.conllu"
+                    if os.path.isfile(f"{treebank_path}/{_file}"):
+                        tmp_dev = {tbid: f"{treebank_path}/{_file}"}
+                        data["validation_data_path"].update(tmp_dev)
+
+                elif k == "test_data_path":
+                    _file = f"{tbid}-ud-test.conllu"
+                    if os.path.isfile(f"{treebank_path}/{_file}"):
+                        tmp_test = {tbid: f"{treebank_path}/{_file}"}
+                        data["test_data_path"].update(tmp_test)
+                    
+                elif k == "validation_metric":
+                    if self.model_type == "singleview" or "singleview-concat":
+                        self.metric = f"+{tbid}_dependencies_LAS"
+                    elif self.model_type == "multiview":
+                        self.metric = f"+meta_dependencies_LAS"
+                    data["trainer"]["validation_metric"] = self.metric
+
+                elif k == "random_seed":
+                    data["random_seed"] = self.random_seed
+                elif k == "numpy_seed":
+                    data["numpy_seed"] = self.random_seed[:-1]
+                elif k == "pytorch_seed":
+                    data["pytorch_seed"] = self.random_seed[:-2]
+
+        # write out custom config
+        with open(f"{dest_file}", "w") as fo:
+            json.dump(data, fo, indent=2)
+            print(json.dumps(data, indent=2))
+
+        GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_logs/"
+        #rclone lsf remote:path-to-file
+
+        #cmd = f"rclone copy {GDRIVE_DEST}{run_name}.tar.gz {logdir}"
+        #print(f"downloading {tbid}")
+        #rcmd = subprocess.call(cmd, shell=True)
+
+        #5) clean-up directory
+        #cmd = f"rm -r {logdir} {logdir}.tar.gz"
+        #print(f"cleaning up")
+        #rcmd = subprocess.call(cmd, shell=True)
+
+
+
+        if os.path.isfile(f"{logdir}/model.tar.gz"):
+            print(f"skipping training, file exists.")
+        else:
+            # train the file
+            cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_parser"
+            print("\nLaunching training script!")
+            rcmd = subprocess.call(cmd, shell=True)
+
+        if self.model_type == "singleview":
+            self.predict_singleview()
+  
+
+    def predict_singleview(self):
+        """Returns the command to run the predictor with the appropriate inputs/outputs."""
+        for tbid in args.tbids:
+            predictor_args = '{"head_name": ""}'
+            predictor_json = json.loads(predictor_args)
+            predictor_json["head_name"] = f"{tbid}_dependencies"
+            predictor_json_string = json.dumps(predictor_json)
             
-            if i == nb_tbids:
-                data["model"]["desired_order_of_heads"].append(f"multi_dependencies")
-                data["model"]["desired_order_of_heads"].append(f"meta_dependencies")
-                
+            target_files = []
 
-        elif k == "heads":
-            # make a fresh copy of the original data, so changes aren't reflected in the first dict
-            tmp_data = copy.deepcopy(data)
-            tmp_heads = {}
-            # access the placeholder object
-            placeholder_value = tmp_data["model"]["heads"][TBID_PLACEHOLDER]
-            tmp_heads[f"{tbid}_{args.head_type}"] = placeholder_value
-            data["model"]["heads"].update(tmp_heads)
-
-            # delete placeholder
-            if i == nb_tbids:
-                del data["model"]["heads"][TBID_PLACEHOLDER]
-
-            # if args.use_cross_stitch:
-            #     # cross-stitch layer is in the meta head
-            #     head_dict["multiview_meta_dependencies"]["use_cross_stitch"] = bool(f"{args.use_cross_stitch}")
-            #     data["model"]["heads"].update(head_dict)
-
-        elif k == "train_data_path":
-            _file = f"{tbid}-ud-train.conllu"
-            # we will just get the main paths once
-            
-            if args.model_type == "singleview-concat":
-                pathname = os.path.join(args.dataset_dir_concatenated, "*", _file)
+            validation_data = data.get("validation_data_path", None)
+            if not validation_data:
+                print("no dev data found")
             else:
-                pathname = os.path.join(args.dataset_dir, "*", _file)
+                target_file = data["validation_data_path"][tbid]
+                target_files.append(target_file)
 
-            train_path = glob.glob(pathname).pop()
-            treebank_path = os.path.dirname(train_path)
+            test_data = data.get("test_data_path", None)
+            if not test_data:
+                print("no test data found")
+            else:
+                target_file = data["test_data_path"][tbid]
+                target_files.append(target_file)
+
+            for target_file in target_files:
+                filename_short = os.path.splitext(os.path.basename(target_file))[0]
+                if "dev" in filename_short:
+                    mode = "dev"
+                elif "test" in filename_short:
+                    mode = "test"
+
+                outfile = f"{self.results_dir}/{run_name}-ud-{mode}.conllu"
+                result_evalfile = f"{self.results_dir}/{run_name}-ud-{mode}-eval.txt"
+                
+                cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
+                    --output-file {outfile} \
+                    --predictor conllu-multitask-predictor \
+                    --include-package multiview_parser \
+                    --use-dataset-reader \
+                    --predictor-args '{predictor_json_string}' \
+                    --multitask-head {tbid} \
+                    --batch-size 32 \
+                    --cuda-device 0 \
+                    --silent"
+
+                print(f"predicting {tbid} in mode {mode}")
+                rcmd = subprocess.call(cmd, shell=True)
+                cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
+                print(f"evaluating {tbid}")
+                rcmd = subprocess.call(cmd, shell=True)
+
+
+    def predict_singleview_concat():
+        """
+        Returns the command to run the predictor with the appropriate inputs/outputs.
+        Has some extra logic to loop over concatenated tbids to predict on the individual tbids.
+        """
+        for tbid in args.tbids:
+            predictor_args = '{"head_name": ""}'
+            predictor_json = json.loads(predictor_args)
+            predictor_json["head_name"] = f"{tbid}_dependencies"
+            predictor_json_string = json.dumps(predictor_json)
+
+            for sub_tbid in tbid.split("+"):
+                outfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev.conllu"
+                result_evalfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev-eval.txt"
+
+                train_file = f"{sub_tbid}-ud-train.conllu" # may not always have dev
+                # we will just get the main paths once
+                pathname = os.path.join(args.dataset_dir, "*", train_file) # NOTE: using non-concat dir
+                train_path = glob.glob(pathname).pop()
+                treebank_path = os.path.dirname(train_path)
+                target_file =  f"{treebank_path}/{sub_tbid}-ud-dev.conllu"
+
+                cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
+                    --output-file {outfile} \
+                    --predictor conllu-multitask-predictor \
+                    --include-package multiview_parser \
+                    --use-dataset-reader \
+                    --predictor-args '{predictor_json_string}' \
+                    --multitask-head {tbid} \
+                    --batch-size 32 \
+                    --cuda-device 0 \
+                    --silent"
+
+                print(f"predicting {tbid}")
+                rcmd = subprocess.call(cmd, shell=True)
+                cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
+                print(f"evaluating {tbid}")
+                rcmd = subprocess.call(cmd, shell=True)
+
+    def predict_multiview():
+        """Returns the command to run the predictor with the appropriate inputs/outputs."""
+        for tbid in args.tbids:
+            predictor_args = '{"head_name": ""}'
+            predictor_json = json.loads(predictor_args)
+            predictor_json["head_name"] = f"meta_dependencies"
+            predictor_json_string = json.dumps(predictor_json)
             
-            if os.path.isfile(f"{treebank_path}/{_file}"):
-                tmp_train = {tbid: f"{treebank_path}/{_file}"}
-                data["train_data_path"].update(tmp_train)
+            outfile = f"{results_dir}/{run_name}-{tbid}-ud-dev.conllu"
+            result_evalfile = f"{results_dir}/{run_name}-{tbid}-ud-dev-eval.txt"
 
-            # delete placeholder
-            if i == nb_tbids:
-                del data["train_data_path"][TBID_PLACEHOLDER]
-                del data["validation_data_path"][TBID_PLACEHOLDER]
-                del data["test_data_path"][TBID_PLACEHOLDER]
-
-                if not data["train_data_path"]:
-                    raise ValueError("No training data")
-
-                if not data["validation_data_path"]:
-                    del data["validation_data_path"]
-                    # must also set metric to training score?
-
-        elif k == "validation_data_path":
-            _file = f"{tbid}-ud-dev.conllu"
-            if os.path.isfile(f"{treebank_path}/{_file}"):
-                tmp_dev = {tbid: f"{treebank_path}/{_file}"}
-                data["validation_data_path"].update(tmp_dev)
-
-        elif k == "test_data_path":
-            _file = f"{tbid}-ud-test.conllu"
-            if os.path.isfile(f"{treebank_path}/{_file}"):
-                tmp_test = {tbid: f"{treebank_path}/{_file}"}
-                data["test_data_path"].update(tmp_test)
-            
-        elif k == "validation_metric":
-            if args.model_type == "singleview" or "singleview-concat":
-                metric = f"+{tbid}_dependencies_LAS"
-            elif args.model_type == "multiview":
-                metric = f"+meta_dependencies_LAS"
-            data["trainer"]["validation_metric"] = metric
-
-        elif k == "random_seed":
-            data["random_seed"] = args.random_seed
-        elif k == "numpy_seed":
-            data["numpy_seed"] = args.random_seed[:-1]
-        elif k == "pytorch_seed":
-            data["pytorch_seed"] = args.random_seed[:-2]
-
-# write out custom config
-with open(f"{dest_file}", "w") as fo:
-    json.dump(data, fo, indent=2)
-    print(json.dumps(data, indent=2))
-
-
-raise ValueError()
-
-# Go through the steps to train, predict, evaluate, upload and clean up results.
-
-# 1) train the file
-cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_parser"
-print("\nLaunching training script!")
-rcmd = subprocess.call(cmd, shell=True)
-
-# 2) predict
-results_dir = "results"
-if not os.path.exists(results_dir):
-    os.makedirs(results_dir)
-
-def predict_singleview():
-    """Returns the command to run the predictor with the appropriate inputs/outputs."""
-    for tbid in args.tbids:
-        predictor_args = '{"head_name": ""}'
-        predictor_json = json.loads(predictor_args)
-        predictor_json["head_name"] = f"{tbid}_dependencies"
-        predictor_json_string = json.dumps(predictor_json)
-        
-        outfile = f"{results_dir}/{run_name}-ud-dev.conllu"
-        result_evalfile = f"{results_dir}/{run_name}-ud-dev-eval.txt"
-        target_file = data["validation_data_path"][tbid]
-
-        cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
-            --output-file {outfile} \
-            --predictor conllu-multitask-predictor \
-            --include-package multiview_parser \
-            --use-dataset-reader \
-            --predictor-args '{predictor_json_string}' \
-            --multitask-head {tbid} \
-            --batch-size 32 \
-            --cuda-device 0 \
-            --silent"
-
-        print(f"predicting {tbid}")
-        rcmd = subprocess.call(cmd, shell=True)
-        cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
-        print(f"evaluating {tbid}")
-        rcmd = subprocess.call(cmd, shell=True)
-
-def predict_singleview_concat():
-    """
-    Returns the command to run the predictor with the appropriate inputs/outputs.
-    Has some extra logic to loop over concatenated tbids to predict on the individual tbids.
-    """
-    for tbid in args.tbids:
-        predictor_args = '{"head_name": ""}'
-        predictor_json = json.loads(predictor_args)
-        predictor_json["head_name"] = f"{tbid}_dependencies"
-        predictor_json_string = json.dumps(predictor_json)
-
-        for sub_tbid in tbid.split("+"):
-            outfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev.conllu"
-            result_evalfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev-eval.txt"
-
-            train_file = f"{sub_tbid}-ud-train.conllu" # may not always have dev
-            # we will just get the main paths once
-            pathname = os.path.join(args.dataset_dir, "*", train_file) # NOTE: using non-concat dir
-            train_path = glob.glob(pathname).pop()
-            treebank_path = os.path.dirname(train_path)
-            target_file =  f"{treebank_path}/{sub_tbid}-ud-dev.conllu"
+            target_file = data["validation_data_path"][tbid]
 
             cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
                 --output-file {outfile} \
@@ -339,55 +423,41 @@ def predict_singleview_concat():
             print(f"evaluating {tbid}")
             rcmd = subprocess.call(cmd, shell=True)
 
-def predict_multiview():
-    """Returns the command to run the predictor with the appropriate inputs/outputs."""
-    for tbid in args.tbids:
-        predictor_args = '{"head_name": ""}'
-        predictor_json = json.loads(predictor_args)
-        predictor_json["head_name"] = f"meta_dependencies"
-        predictor_json_string = json.dumps(predictor_json)
-        
-        outfile = f"{results_dir}/{run_name}-{tbid}-ud-dev.conllu"
-        result_evalfile = f"{results_dir}/{run_name}-{tbid}-ud-dev-eval.txt"
 
-        target_file = data["validation_data_path"][tbid]
 
-        cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
-            --output-file {outfile} \
-            --predictor conllu-multitask-predictor \
-            --include-package multiview_parser \
-            --use-dataset-reader \
-            --predictor-args '{predictor_json_string}' \
-            --multitask-head {tbid} \
-            --batch-size 32 \
-            --cuda-device 0 \
-            --silent"
+experiment_builder = ExperimentBuilder(args)
+experiment = experiment_builder.prepare_and_run_experiment()
 
-        print(f"predicting {tbid}")
-        rcmd = subprocess.call(cmd, shell=True)
-        cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
-        print(f"evaluating {tbid}")
-        rcmd = subprocess.call(cmd, shell=True)
 
-if args.model_type  == "singleview":
-    predict_singleview()
-elif args.model_type == "singleview-concat":
-    predict_singleview_concat()
-elif args.model_type == "multiview":
-    predict_multiview()
 
-raise ValueError()
+# raise ValueError()
+# # Go through the steps to train, predict, evaluate, upload and clean up results.
 
-# 3) tar the model directory (include directory so it gets stored there?)
-cmd = f"tar -cvzf {logdir}.tar.gz {logdir}/"
-print(f"tarring {tbid}")
-rcmd = subprocess.call(cmd, shell=True)
 
-# 4) store it on Google Drive
-GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_logs/"
-cmd = f"rclone copy {logdir}.tar.gz {GDRIVE_DEST}"
-print(f"uploading {tbid}")
-rcmd = subprocess.call(cmd, shell=True)
+
+# # 2) predict
+
+
+
+# if args.model_type  == "singleview":
+#     predict_singleview()
+# elif args.model_type == "singleview-concat":
+#     predict_singleview_concat()
+# elif args.model_type == "multiview":
+#     predict_multiview()
+
+# raise ValueError()
+
+# # 3) tar the model directory (include directory so it gets stored there?)
+# cmd = f"tar -cvzf {logdir}.tar.gz {logdir}/"
+# print(f"tarring {tbid}")
+# rcmd = subprocess.call(cmd, shell=True)
+
+# # 4) store it on Google Drive
+# GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_logs/"
+# cmd = f"rclone copy {logdir}.tar.gz {GDRIVE_DEST}"
+# print(f"uploading {tbid}")
+# rcmd = subprocess.call(cmd, shell=True)
 
 # 5) clean-up directory
 # cmd = f"rm -r {logdir} {logdir}.tar.gz"
