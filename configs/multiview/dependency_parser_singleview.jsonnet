@@ -1,7 +1,7 @@
 local num_gpus = 1;
-local gpu_batch_size = 8;
+local gpu_batch_size = 2;
 local effective_batch_size = gpu_batch_size * num_gpus;
-local num_epochs = 50;
+local num_epochs = 2;
 local patience = 8;
 local num_gradient_accumulation_steps = 32 / effective_batch_size;
 local max_length = 128;
@@ -47,7 +47,7 @@ local reader_common = {
   "model": {
     "type": "multitask_v2",
     "multiple_heads_one_data_source": true,
-    "desired_order_of_heads" : "",
+    "desired_order_of_heads": [],
     "allowed_arguments": {
         "backbone": ["words"],
         "TBID_PLACEHOLDER": ["encoded_text", "task", "mask", "upos", "metadata", "head_tags", "head_indices"],
