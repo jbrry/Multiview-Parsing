@@ -152,15 +152,16 @@ class ExperimentBuilder:
         self.random_seed = args.random_seed
         self.results_dir = args.results_dir
 
+        self.GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_logs/"
+
         if not os.path.exists(self.results_dir):
             os.makedirs(self.results_dir)
 
-
+        
     def prepare_and_run_experiment(self):
         print(f"creating config {run_name}")
 
         for i, tbid in enumerate(self.tbids, start=1):
-            
             print(f"=== {tbid} ===")
             for k in self.fields:
                 if k == "dataset_reader":
@@ -235,27 +236,31 @@ class ExperimentBuilder:
                     # delete placeholder
                     if i == nb_tbids:
                         del data["train_data_path"][TBID_PLACEHOLDER]
-                        del data["validation_data_path"][TBID_PLACEHOLDER]
-                        del data["test_data_path"][TBID_PLACEHOLDER]
-
                         if not data["train_data_path"]:
                             raise ValueError("No training data")
-
-                        if not data["validation_data_path"]:
-                            del data["validation_data_path"]
-                            # must also set metric to training score?
 
                 elif k == "validation_data_path":
                     _file = f"{tbid}-ud-dev.conllu"
                     if os.path.isfile(f"{treebank_path}/{_file}"):
+                        print(data["validation_data_path"])
                         tmp_dev = {tbid: f"{treebank_path}/{_file}"}
                         data["validation_data_path"].update(tmp_dev)
+                
+                    if i == nb_tbids:
+                        del data["validation_data_path"][TBID_PLACEHOLDER]
+                        if not data["validation_data_path"]:
+                            del data["validation_data_path"]
 
                 elif k == "test_data_path":
                     _file = f"{tbid}-ud-test.conllu"
                     if os.path.isfile(f"{treebank_path}/{_file}"):
                         tmp_test = {tbid: f"{treebank_path}/{_file}"}
                         data["test_data_path"].update(tmp_test)
+
+                    if i == nb_tbids:
+                        del data["test_data_path"][TBID_PLACEHOLDER]
+                        if not data["test_data_path"]:
+                            del data["test_data_path"]
                     
                 elif k == "validation_metric":
                     if self.model_type == "singleview" or "singleview-concat":
@@ -276,31 +281,52 @@ class ExperimentBuilder:
             json.dump(data, fo, indent=2)
             print(json.dumps(data, indent=2))
 
-        GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_logs/"
-        #rclone lsf remote:path-to-file
-
-        #cmd = f"rclone copy {GDRIVE_DEST}{run_name}.tar.gz {logdir}"
-        #print(f"downloading {tbid}")
-        #rcmd = subprocess.call(cmd, shell=True)
-
-        #5) clean-up directory
-        #cmd = f"rm -r {logdir} {logdir}.tar.gz"
-        #print(f"cleaning up")
-        #rcmd = subprocess.call(cmd, shell=True)
-
-
-
+        # check if the model is on google drive, if so download it and unpack it for prediction
+        cmd = f"rclone copy {self.GDRIVE_DEST}{run_name}.tar.gz {os.path.dirname(logdir)}"
+        rcmd = subprocess.call(cmd, shell=True)
+        
+        # if we downloaded a file, extract it
+        if os.path.exists(f"{logdir}.tar.gz"):
+            cmd = f"tar -xvzf {logdir}.tar.gz"
+            rcmd = subprocess.call(cmd, shell=True)
+        
+        # check if the tar contains a model
         if os.path.isfile(f"{logdir}/model.tar.gz"):
             print(f"skipping training, file exists.")
         else:
-            # train the file
+            # remove tarred file which only contains stdout etc.
+            print("removing tarred file with no model")
+            cmd = f"rm {logdir}.tar.gz"
+            rcmd = subprocess.call(cmd, shell=True)
+
+            print("training from scratch")
             cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_parser"
             print("\nLaunching training script!")
             rcmd = subprocess.call(cmd, shell=True)
 
-        if self.model_type == "singleview":
+        # predict
+        if self.model_type  == "singleview":
             self.predict_singleview()
-  
+        # elif self.model_type == "singleview-concat":
+        #     self.predict_singleview_concat()
+        # elif self.model_type == "multiview":
+        #     self.predict_multiview()
+
+        # tar the file (in the case we've just trained a new model)
+        if not os.path.exists(f"{logdir}.tar.gz"):
+            cmd = f"tar -cvzf {logdir}.tar.gz {logdir}/"
+            print(f"tarring {tbid}")
+            rcmd = subprocess.call(cmd, shell=True)
+            # store it on Google Drive
+            cmd = f"rclone copy {logdir}.tar.gz {self.GDRIVE_DEST}"
+            print(f"uploading {tbid}")
+            rcmd = subprocess.call(cmd, shell=True)
+
+        # clean-up directory
+        cmd = f"rm -r {logdir} {logdir}.tar.gz"
+        print(f"cleaning up")
+        rcmd = subprocess.call(cmd, shell=True)
+
 
     def predict_singleview(self):
         """Returns the command to run the predictor with the appropriate inputs/outputs."""
@@ -424,42 +450,7 @@ class ExperimentBuilder:
             rcmd = subprocess.call(cmd, shell=True)
 
 
-
 experiment_builder = ExperimentBuilder(args)
 experiment = experiment_builder.prepare_and_run_experiment()
 
 
-
-# raise ValueError()
-# # Go through the steps to train, predict, evaluate, upload and clean up results.
-
-
-
-# # 2) predict
-
-
-
-# if args.model_type  == "singleview":
-#     predict_singleview()
-# elif args.model_type == "singleview-concat":
-#     predict_singleview_concat()
-# elif args.model_type == "multiview":
-#     predict_multiview()
-
-# raise ValueError()
-
-# # 3) tar the model directory (include directory so it gets stored there?)
-# cmd = f"tar -cvzf {logdir}.tar.gz {logdir}/"
-# print(f"tarring {tbid}")
-# rcmd = subprocess.call(cmd, shell=True)
-
-# # 4) store it on Google Drive
-# GDRIVE_DEST="gdrive:Parsing-PhD-Folder/UD-Data/cross-lingual-parsing/Multilingual_Parsing_Meta_Structure/experiment_logs/"
-# cmd = f"rclone copy {logdir}.tar.gz {GDRIVE_DEST}"
-# print(f"uploading {tbid}")
-# rcmd = subprocess.call(cmd, shell=True)
-
-# 5) clean-up directory
-# cmd = f"rm -r {logdir} {logdir}.tar.gz"
-# print(f"cleaning up")
-# rcmd = subprocess.call(cmd, shell=True)
