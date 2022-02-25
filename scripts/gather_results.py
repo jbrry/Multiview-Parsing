@@ -116,7 +116,33 @@ for filename in os.listdir(args.result_dir):
                                         metric = items[METRIC].strip()
                                         if metric == "LAS":
                                             score = items[F1SCORE].strip()
-                                            GROUP_TO_TBID_RESULTS[group][model_type][tbid] = score     
+                                            GROUP_TO_TBID_RESULTS[group][model_type][tbid] = score
+
+        elif "multiview" in filename:
+            model_type = "multiview"
+            filename_short = os.path.splitext(filename)[0]
+            filepath = os.path.join(args.result_dir, filename)
+            x = filename_short.split("-")
+            tbid = x[-4]
+
+            for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
+                if tbid in tbids:
+                    
+                    if os.stat(filepath).st_size == 0:
+                        print(f"File {filename_short} is empty")
+                        if tbid in NO_DEV:
+                            GROUP_TO_TBID_RESULTS[group][model_type][tbid] = "no-dev" 
+                        else:
+                            GROUP_TO_TBID_RESULTS[group][model_type][tbid] = 0. 
+                    else:
+                        with open(filepath, 'r') as fi:
+                            for line in fi:
+                                items = line.split("|")
+                                if len(items) == 5:
+                                    metric = items[METRIC].strip()
+                                    if metric == "LAS":
+                                        score = items[F1SCORE].strip()
+                                        GROUP_TO_TBID_RESULTS[group][model_type][tbid] = score
                                         
 
 # print()
@@ -128,7 +154,7 @@ for filename in os.listdir(args.result_dir):
 # raise ValueError()
 
 with open('results/insights.csv', 'w', newline='') as csvfile:
-    fieldnames = ['group', 'tbid', 'singleview', 'singleview-concat'] #+ MODEL_TYPES
+    fieldnames = ['group', 'tbid', 'singleview', 'singleview-concat', 'multiview'] #+ MODEL_TYPES
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
 
@@ -147,10 +173,16 @@ with open('results/insights.csv', 'w', newline='') as csvfile:
             except KeyError:
                 singleview_concat_score = 0.
 
+            try:
+                multiview_score = model_type["multiview"][tbid]
+            except KeyError:
+                multiview_score = 0.
+
             writer.writerow({'group': group,
                             'tbid': tbid,
                             'singleview': singleview_score,
                             'singleview-concat': singleview_concat_score,
+                            'multiview': multiview_score,
                             })
  
 

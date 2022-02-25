@@ -201,15 +201,16 @@ for i, tbid in enumerate(args.tbids, start=1):
             # we will just get the main paths once
             
             if args.model_type == "singleview-concat":
-                print("@@@@ CONCAT @@@@")
                 pathname = os.path.join(args.dataset_dir_concatenated, "*", _file)
             else:
                 pathname = os.path.join(args.dataset_dir, "*", _file)
 
             train_path = glob.glob(pathname).pop()
             treebank_path = os.path.dirname(train_path)
-            tmp_train = {tbid: f"{treebank_path}/{_file}"}
-            data["train_data_path"].update(tmp_train)
+            
+            if os.path.isfile(f"{treebank_path}/{_file}"):
+                tmp_train = {tbid: f"{treebank_path}/{_file}"}
+                data["train_data_path"].update(tmp_train)
 
             # delete placeholder
             if i == nb_tbids:
@@ -217,16 +218,25 @@ for i, tbid in enumerate(args.tbids, start=1):
                 del data["validation_data_path"][TBID_PLACEHOLDER]
                 del data["test_data_path"][TBID_PLACEHOLDER]
 
+                if not data["train_data_path"]:
+                    raise ValueError("No training data")
+
+                if not data["validation_data_path"]:
+                    del data["validation_data_path"]
+                    # must also set metric to training score?
+
         elif k == "validation_data_path":
             _file = f"{tbid}-ud-dev.conllu"
-            tmp_dev = {tbid: f"{treebank_path}/{_file}"}
-            data["validation_data_path"].update(tmp_dev)
+            if os.path.isfile(f"{treebank_path}/{_file}"):
+                tmp_dev = {tbid: f"{treebank_path}/{_file}"}
+                data["validation_data_path"].update(tmp_dev)
 
         elif k == "test_data_path":
             _file = f"{tbid}-ud-test.conllu"
-            tmp_test = {tbid: f"{treebank_path}/{_file}"}
-            data["test_data_path"].update(tmp_test)
-
+            if os.path.isfile(f"{treebank_path}/{_file}"):
+                tmp_test = {tbid: f"{treebank_path}/{_file}"}
+                data["test_data_path"].update(tmp_test)
+            
         elif k == "validation_metric":
             if args.model_type == "singleview" or "singleview-concat":
                 metric = f"+{tbid}_dependencies_LAS"
@@ -247,15 +257,14 @@ with open(f"{dest_file}", "w") as fo:
     print(json.dumps(data, indent=2))
 
 
+raise ValueError()
+
 # Go through the steps to train, predict, evaluate, upload and clean up results.
 
 # 1) train the file
 cmd = f"allennlp train -f {dest_file} -s {logdir} --include-package multiview_parser"
 print("\nLaunching training script!")
 rcmd = subprocess.call(cmd, shell=True)
-
-
-raise ValueError()
 
 # 2) predict
 results_dir = "results"
@@ -330,10 +339,44 @@ def predict_singleview_concat():
             print(f"evaluating {tbid}")
             rcmd = subprocess.call(cmd, shell=True)
 
+def predict_multiview():
+    """Returns the command to run the predictor with the appropriate inputs/outputs."""
+    for tbid in args.tbids:
+        predictor_args = '{"head_name": ""}'
+        predictor_json = json.loads(predictor_args)
+        predictor_json["head_name"] = f"meta_dependencies"
+        predictor_json_string = json.dumps(predictor_json)
+        
+        outfile = f"{results_dir}/{run_name}-{tbid}-ud-dev.conllu"
+        result_evalfile = f"{results_dir}/{run_name}-{tbid}-ud-dev-eval.txt"
+
+        target_file = data["validation_data_path"][tbid]
+
+        cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
+            --output-file {outfile} \
+            --predictor conllu-multitask-predictor \
+            --include-package multiview_parser \
+            --use-dataset-reader \
+            --predictor-args '{predictor_json_string}' \
+            --multitask-head {tbid} \
+            --batch-size 32 \
+            --cuda-device 0 \
+            --silent"
+
+        print(f"predicting {tbid}")
+        rcmd = subprocess.call(cmd, shell=True)
+        cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
+        print(f"evaluating {tbid}")
+        rcmd = subprocess.call(cmd, shell=True)
+
 if args.model_type  == "singleview":
     predict_singleview()
 elif args.model_type == "singleview-concat":
     predict_singleview_concat()
+elif args.model_type == "multiview":
+    predict_multiview()
+
+raise ValueError()
 
 # 3) tar the model directory (include directory so it gets stored there?)
 cmd = f"tar -cvzf {logdir}.tar.gz {logdir}/"
@@ -347,6 +390,6 @@ print(f"uploading {tbid}")
 rcmd = subprocess.call(cmd, shell=True)
 
 # 5) clean-up directory
-cmd = f"rm -r {logdir} {logdir}.tar.gz"
-print(f"cleaning up")
-rcmd = subprocess.call(cmd, shell=True)
+# cmd = f"rm -r {logdir} {logdir}.tar.gz"
+# print(f"cleaning up")
+# rcmd = subprocess.call(cmd, shell=True)
