@@ -307,8 +307,9 @@ class ExperimentBuilder:
         # predict
         if self.model_type  == "singleview":
             self.predict_singleview()
-        # elif self.model_type == "singleview-concat":
-        #     self.predict_singleview_concat()
+        elif self.model_type == "singleview-concat":
+            self.predict_singleview_concat()
+            raise ValueError()
         # elif self.model_type == "multiview":
         #     self.predict_multiview()
 
@@ -330,6 +331,8 @@ class ExperimentBuilder:
 
     def predict_singleview(self):
         """Returns the command to run the predictor with the appropriate inputs/outputs."""
+        print("predicting singleview")
+
         for tbid in args.tbids:
             predictor_args = '{"head_name": ""}'
             predictor_json = json.loads(predictor_args)
@@ -380,11 +383,12 @@ class ExperimentBuilder:
                 rcmd = subprocess.call(cmd, shell=True)
 
 
-    def predict_singleview_concat():
+    def predict_singleview_concat(self):
         """
         Returns the command to run the predictor with the appropriate inputs/outputs.
         Has some extra logic to loop over concatenated tbids to predict on the individual tbids.
         """
+        print("predicting singleview-concat")
         for tbid in args.tbids:
             predictor_args = '{"head_name": ""}'
             predictor_json = json.loads(predictor_args)
@@ -392,34 +396,39 @@ class ExperimentBuilder:
             predictor_json_string = json.dumps(predictor_json)
 
             for sub_tbid in tbid.split("+"):
-                outfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev.conllu"
-                result_evalfile = f"{results_dir}/{run_name}-{sub_tbid}-ud-dev-eval.txt"
-
+                print(f"predicting {sub_tbid}")
+                # check if the files exist
                 train_file = f"{sub_tbid}-ud-train.conllu" # may not always have dev
-                # we will just get the main paths once
                 pathname = os.path.join(args.dataset_dir, "*", train_file) # NOTE: using non-concat dir
                 train_path = glob.glob(pathname).pop()
                 treebank_path = os.path.dirname(train_path)
-                target_file =  f"{treebank_path}/{sub_tbid}-ud-dev.conllu"
+                
+                for mode in ["dev", "test"]:
+                    print(f"predicting {mode}")
+                    _file = f"{sub_tbid}-ud-{mode}.conllu"
+                    if os.path.isfile(f"{treebank_path}/{_file}"):
+                        outfile = f"{self.results_dir}/{run_name}-{sub_tbid}-ud-{mode}.conllu"
+                        result_evalfile = f"{self.results_dir}/{run_name}-{sub_tbid}-ud-{mode}-eval.txt"
+                        target_file =  f"{treebank_path}/{sub_tbid}-ud-{mode}.conllu"
 
-                cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
-                    --output-file {outfile} \
-                    --predictor conllu-multitask-predictor \
-                    --include-package multiview_parser \
-                    --use-dataset-reader \
-                    --predictor-args '{predictor_json_string}' \
-                    --multitask-head {tbid} \
-                    --batch-size 32 \
-                    --cuda-device 0 \
-                    --silent"
+                        cmd = f"allennlp predict {logdir}/model.tar.gz {target_file} \
+                            --output-file {outfile} \
+                            --predictor conllu-multitask-predictor \
+                            --include-package multiview_parser \
+                            --use-dataset-reader \
+                            --predictor-args '{predictor_json_string}' \
+                            --multitask-head {tbid} \
+                            --batch-size 32 \
+                            --cuda-device 0 \
+                            --silent"
 
-                print(f"predicting {tbid}")
-                rcmd = subprocess.call(cmd, shell=True)
-                cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
-                print(f"evaluating {tbid}")
-                rcmd = subprocess.call(cmd, shell=True)
+                        print(f"predicting {tbid}")
+                        rcmd = subprocess.call(cmd, shell=True)
+                        cmd = f"python scripts/conll18_ud_eval.py -v {target_file} {outfile} > {result_evalfile}"
+                        print(f"evaluating {tbid}")
+                        rcmd = subprocess.call(cmd, shell=True)
 
-    def predict_multiview():
+    def predict_multiview(self):
         """Returns the command to run the predictor with the appropriate inputs/outputs."""
         for tbid in args.tbids:
             predictor_args = '{"head_name": ""}'
