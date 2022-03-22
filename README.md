@@ -5,6 +5,19 @@ Mixed Polyglot Monolingual Parsing
 
 To work with the main version of AllenNLP:
 
+Using `venv`
+
+```
+mkdir mvenv
+python3 -m venv ./mvenv/
+source mvenv/bin/activate
+
+pip install torch==1.9.0+cu102 torchvision==0.10.0+cu102 torchaudio==0.9.0 -f https://download.pytorch.org/whl/torch_stable.html
+
+pip install conllu
+```
+
+
 ```
 conda create -n allennlp python=3.7
 conda activate allennlp
