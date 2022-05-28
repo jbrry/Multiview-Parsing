@@ -4,6 +4,7 @@
 
 from typing import Dict, Tuple, List, Any, Callable
 import logging
+import os
 
 from conllu import parse_incr
 
@@ -64,17 +65,19 @@ class UniversalDependenciesAllFeaturesDatasetReader(DatasetReader):
         self,
         token_indexers: Dict[str, TokenIndexer] = None,
         tokenizer: Tokenizer = None,
+        use_dataset_embedding: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
-
         self.tokenizer = tokenizer
-
+        self._use_dataset_embedding = use_dataset_embedding
 
     def _read(self, file_path: str):
         # if `file_path` is a URL, redirect to the cache
         file_path = cached_path(file_path)
+        # get dataset id from filename
+        dataset_id = os.path.basename(file_path).split("-")[0]
 
         with open(file_path, "r") as conllu_file:
             logger.info("Reading UD instances from conllu dataset at: %s", file_path)
@@ -122,9 +125,12 @@ class UniversalDependenciesAllFeaturesDatasetReader(DatasetReader):
                 misc = get_field("misc", lambda x: "|".join(k + "=" + v if v is not None else k + "=" + "" for k, v in x.items())
                                     if hasattr(x, "items") else "_")
 
+                if self._use_dataset_embedding:
+                    dataset_ids = [dataset_id for x in words]
+
                 yield self.text_to_instance(ids, multiword_ids, multiword_forms,
                                             misc, conllu_metadata,
-                                            words, lemmas, upos_tags, xpos_tags,
+                                            words, dataset_ids, lemmas, upos_tags, xpos_tags,
                                             feats, dependencies)
 
     def text_to_instance(
@@ -135,6 +141,7 @@ class UniversalDependenciesAllFeaturesDatasetReader(DatasetReader):
         misc: List[str],
         conllu_metadata: List[str],
         words: List[str],
+        dataset_ids: List[str],
         lemmas: List[str] = None,
         upos_tags: List[str] = None,
         xpos_tags: List[str] = None,
@@ -181,6 +188,9 @@ class UniversalDependenciesAllFeaturesDatasetReader(DatasetReader):
             fields["head_indices"] = SequenceLabelField(
                 [x[1] for x in dependencies], text_field, label_namespace="head_index_tags"
             )
+
+        if self._use_dataset_embedding:
+            fields["dataset_ids"] = SequenceLabelField(dataset_ids, text_field, label_namespace="dataset_ids")
 
         fields["metadata"] = MetadataField({
             "words": words,
