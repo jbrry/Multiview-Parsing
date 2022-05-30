@@ -44,22 +44,23 @@ class TransformerBackbone(Backbone):
         self,
         vocab: Vocabulary,
         *,
-        text_field_embedder: TextFieldEmbedder = None,
-        mono_embedders: Dict[str, TextFieldEmbedder] = None,
-        mono_encoders: Dict[str, Seq2SeqEncoder] = None,
+        text_field_embedder: TextFieldEmbedder,
+        enc_dataset_embedding: Embedding = None,
         output_token_strings: bool = False,
         dropout: float = 0.0,
         input_dropout_word: float = 0.0,
+        enc_dataset_dim: float = 768,
     ) -> None:
         super().__init__()
-
         self._text_field_embedder = text_field_embedder
-
         self._output_token_strings = output_token_strings
         self._dropout = InputVariationalDropout(dropout)
         self._input_dropout_word = Dropout(input_dropout_word)
+        self._enc_dataset_embedding = enc_dataset_embedding or None
 
-    def forward(self, words: TextFieldTensors = None) -> Dict[str, torch.Tensor]:  # type: ignore
+    def forward(self,
+                words: TextFieldTensors = None,
+                dataset_ids: torch.LongTensor = None) -> Dict[str, torch.Tensor]:  # type: ignore
 
         if words and len(words) != 1:
             raise ValueError(
@@ -69,7 +70,7 @@ class TransformerBackbone(Backbone):
         mask = util.get_text_field_mask(words)
 
         if self._text_field_embedder:
-            embedded_text_input = self._text_field_embedder(words)
+            embedded_text_input = self._text_field_embedder(words, dataset_ids=dataset_ids, enc_dataset_embedding=self._enc_dataset_embedding)
             embedded_text_input = self._input_dropout_word(embedded_text_input)
 
         outputs = {
