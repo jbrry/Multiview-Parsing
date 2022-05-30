@@ -67,6 +67,7 @@ class MultiviewMetaParserHead(Head):
         super().__init__(vocab, **kwargs)
 
         self.meta_encoder = meta_encoder
+        self.use_cross_stitch = use_cross_stitch
 
         self.head_arc_feedforward = arc_feedforward or FeedForward(
             meta_encoder.get_output_dim(),
@@ -80,7 +81,10 @@ class MultiviewMetaParserHead(Head):
             arc_representation_dim, arc_representation_dim, use_input_biases=True
         )
 
-        self.cross_stitch = CrossStitchBlock(num_tasks, num_subspaces)
+        if self.use_cross_stitch:
+            self.cross_stitch = torch.nn.ModuleDict(
+                {k: CrossStitchBlock(num_tasks, num_subspaces) for k in self.task_heads}
+            )
 
         num_labels = self.vocab.get_vocab_size("head_tags")
         self.ls = self.vocab.get_token_to_index_vocabulary("head_tags")
@@ -158,6 +162,7 @@ class MultiviewMetaParserHead(Head):
             first_view_encoded_text,
             second_view_encoded_text,
             mask,
+            batch_task,
             head_tags,
             head_indices,
         )
@@ -243,14 +248,17 @@ class MultiviewMetaParserHead(Head):
         first_view_encoded_text: torch.Tensor,
         second_view_encoded_text: torch.Tensor,
         mask: torch.BoolTensor,
+        batch_task: str,
         head_tags: torch.LongTensor = None,
         head_indices: torch.LongTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
         if self.use_cross_stitch:
+            # each input has its own cross-stitch block (which controls single vs multi)
+            cross_stitch_kernel = self.cross_stitch[f"{batch_task}_dependencies"]
             # pass output of different tasks to cross-stitch block
             cross_stitch_inputs = [first_view_encoded_text, second_view_encoded_text]
-            cross_stitch_outputs = self.cross_stitch(cross_stitch_inputs)
+            cross_stitch_outputs = cross_stitch_kernel(cross_stitch_inputs)
             # unpack cross-stitched output to be passed to subsequent layer
             stitched_first_view_encoded_text, stitched_second_view_encoded_text = cross_stitch_outputs
             inputs = torch.cat([stitched_first_view_encoded_text, stitched_second_view_encoded_text], -1)
@@ -271,6 +279,7 @@ class MultiviewMetaParserHead(Head):
         mask = torch.cat([mask.new_ones(batch_size, 1), mask], 1)
 
         # Pass inputs to the encoder
+        # could try variant where there's no meta encoder and just a cross-stitch block.
         encoded_text = self.meta_encoder(inputs, mask)
         encoded_text = self._dropout(encoded_text)
         
@@ -547,7 +556,15 @@ class MultiviewMetaParserHead(Head):
             # Decode the heads. Because we modify the scores to prevent
             # adding in word -> ROOT edges, we need to find the labels ourselves.
             instance_heads, _ = decode_mst(scores.numpy(), length, has_labels=False)
-
+            # LATTICE solution to multiple roots (https://github.com/jujbob/multilingual-bist-parser/blob/master/bist-parser/bmstparser/src/mstlstm.py)
+            root_heads = [h for h in instance_heads if h == 0]
+            if len(root_heads) != 1:
+                logger.debug(
+                    "Found multi-root, setting first root as head of other roots."
+                )
+                root_heads = [seq for seq, head in enumerate(instance_heads) if head == 0]
+                for seq in root_heads[1:]:
+                    instance_heads[seq] = root_heads[0]
             # Find the labels which correspond to the edges in the max spanning tree.
             instance_head_tags = []
             for child, parent in enumerate(instance_heads):

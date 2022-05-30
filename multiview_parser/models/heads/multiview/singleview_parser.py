@@ -89,9 +89,6 @@ class SingleViewParserHead(Head):
 
         self.use_mst_decoding_for_validation = use_mst_decoding_for_validation
 
-
-        print(self.use_mst_decoding_for_validation)
-
         tags = self.vocab.get_token_to_index_vocabulary("upos")
         punctuation_tag_indices = {
             tag: index for tag, index in tags.items() if tag in POS_TO_IGNORE
