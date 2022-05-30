@@ -83,13 +83,11 @@ class MultiTaskModelV2(Model):
         super().__init__(vocab, **kwargs)
         self._backbone = backbone
         self.desired_order_of_heads = desired_order_of_heads
-        
         if self.desired_order_of_heads:
             ordered_heads = {k: heads[k] for k in desired_order_of_heads}
             self._heads = torch.nn.ModuleDict(OrderedDict(ordered_heads))
         else:
             self._heads = torch.nn.ModuleDict(heads)
-
         self._heads_called: Set[str] = set()
         self._multiple_heads_one_data_source = multiple_heads_one_data_source
         self._arg_name_mapping = arg_name_mapping or defaultdict(dict)
@@ -102,7 +100,6 @@ class MultiTaskModelV2(Model):
         initializer(self)
 
     def forward(self, **kwargs) -> Dict[str, torch.Tensor]:  # type: ignore
-
         if "task" not in kwargs:
             raise ValueError(
                 "Instances for multitask training need to contain a MetadataField with "
@@ -117,26 +114,24 @@ class MultiTaskModelV2(Model):
 
         batch_task = kwargs["task"][0]
         
- 
         backbone_arguments = self._get_arguments(kwargs, "backbone")
         backbone_outputs = self._backbone(**backbone_arguments)
 
-        # don't think we need encoded text in the output anymore
-        outputs = {**backbone_outputs}
+        outputs = {}
         
         loss = None
 
+        # only run the current dataset, multi and meta head if doing multiview
+        if "meta_dependencies" in self._heads:
+            fixed_task_heads = ["multi_dependencies", "meta_dependencies"]
+            task_heads = [f"{batch_task}_dependencies"] + fixed_task_heads
+            assert len(task_heads) == 3 # tb, sh, meta
+            assert task_heads[-1] == "meta_dependencies"
+        else:
+            task_heads = list(self._heads)
 
-
-
-        #fixed_task_heads = ["multi_dependencies", "meta_dependencies"]
-        #task_heads = [f"{batch_task}_dependencies"] + fixed_task_heads
-        #assert len(task_heads) == 3 # tb, sh, meta
-        #assert task_heads[-1] == "meta_dependencies"
-
-    
-        for head_name in self._heads:
-            combined_arguments = {**backbone_outputs, **kwargs, **outputs} # 20 
+        for head_name in task_heads:
+            combined_arguments = {**backbone_outputs, **kwargs, **outputs} # 20
             head_arguments = self._get_arguments(combined_arguments, head_name) # 7
 
             if head_name == "meta_dependencies":
@@ -150,9 +145,9 @@ class MultiTaskModelV2(Model):
                 head_arguments.update(tmp)
 
             head_outputs = self._heads[head_name](**head_arguments)
+            
             for key in head_outputs:
                 outputs[f"{head_name}_{key}"] = head_outputs[key]
-
 
             if "loss" in head_outputs:
                 self._heads_called.add(head_name)
@@ -202,8 +197,6 @@ class MultiTaskModelV2(Model):
     def make_output_human_readable(
         self, output_dict: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
-        # if not output_dict:
-        #     return
 
         output_dict = self._backbone.make_output_human_readable(output_dict)
         for head_name in self._heads_called: # we won't have all heads here.
