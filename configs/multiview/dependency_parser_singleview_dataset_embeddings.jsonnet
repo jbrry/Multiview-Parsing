@@ -10,6 +10,7 @@ local encoder_dim = transformer_dim;
 
 // the pretrained transformer is common to all readers
 local reader_common = {
+  "use_dataset_embedding": true,
   "token_indexers": {
     "tokens": {
       "type": "pretrained_transformer_mismatched",
@@ -35,24 +36,22 @@ local reader_common = {
     }
   },
   "train_data_path": {
-      "TBID_PLACEHOLDER": "",
+    "TBID_PLACEHOLDER": "",
   },
   "validation_data_path": {
-      "TBID_PLACEHOLDER": "",
+     "TBID_PLACEHOLDER": "",
   },
   "test_data_path": {
-      "TBID_PLACEHOLDER": "",
+    "TBID_PLACEHOLDER": "",
   },
 
   "model": {
     "type": "multitask_v2",
     "multiple_heads_one_data_source": true,
-    "desired_order_of_heads" : [],
+    "desired_order_of_heads": [],
     "allowed_arguments": {
-        "backbone": ["words"],
+        "backbone": ["words", "dataset_ids"],
         "TBID_PLACEHOLDER": ["encoded_text", "task", "mask", "upos", "metadata", "head_tags", "head_indices"],
-        "multi_dependencies": ["encoded_text", "task", "mask", "upos", "metadata", "head_tags", "head_indices"],
-        "meta_dependencies": ["other_module_inputs", "task", "mask", "upos", "metadata", "head_tags", "head_indices"]
     },
 
     "backbone": {
@@ -60,70 +59,34 @@ local reader_common = {
         "text_field_embedder": {
           "token_embedders": {
             "tokens": {
-              "type": "pretrained_transformer_mismatched",
+              "type": "pretrained_transformer_mismatched_dataset",
               "model_name": "",
               "max_length": max_length
             }
           }
         },
+      "enc_dataset_embedding": {
+        "embedding_dim": transformer_dim,
+        "vocab_namespace": "dataset_ids"
+      },
       "dropout": 0.33,
       "input_dropout_word": 0.33,
     },
     "heads": {
       "TBID_PLACEHOLDER": {
-        "type": "multiview_parser",
-        "encoder": {
-          "type": "stacked_bidirectional_lstm",
-          "input_size": transformer_dim,
-          "hidden_size": 400,
-          "num_layers": 2,
-          "recurrent_dropout_probability": 0.33,
-          "use_highway": true
-        },
+        "type": "singleview_parser",
+        "encoder_dim": transformer_dim,
         "tag_representation_dim": 100,
         "arc_representation_dim": 500,
         "use_mst_decoding_for_validation": true,
         "dropout": 0.33
-      },
-      "multi_dependencies": {
-        "type": "multiview_parser",
-        "encoder": {
-          "type": "stacked_bidirectional_lstm",
-          "input_size": transformer_dim,
-          "hidden_size": 400,
-          "num_layers": 2,
-          "recurrent_dropout_probability": 0.33,
-          "use_highway": true
-        },
-        "tag_representation_dim": 100,
-        "arc_representation_dim": 500,
-        "use_mst_decoding_for_validation": true,
-        "dropout": 0.33
-      },
-      "meta_dependencies": {
-        "type": "multiview_meta_parser",
-        "meta_encoder": {
-          "type": "stacked_bidirectional_lstm",
-          "input_size": 800 + 800,
-          "hidden_size": 400,
-          "num_layers": 2,
-          "recurrent_dropout_probability": 0.33,
-          "use_highway": true
-        },
-        "tag_representation_dim": 100,
-        "arc_representation_dim": 500,
-        "use_mst_decoding_for_validation": true,
-        "dropout": 0.33,
-        "first_encoded_text_source": "dependencies_module_text",
-        "second_encoded_text_source": "multi_dependencies_module_text",
-        "use_cross_stitch": false,
       }
     }
   },
   "data_loader": {
     "type": "multitask",
     "scheduler": {
-      "batch_size": gpu_batch_size
+      "batch_size": gpu_batch_size,
     },
     "shuffle": true,
   },
@@ -133,7 +96,7 @@ local reader_common = {
     "patience": patience,
     "cuda_device": 0,
     "num_gradient_accumulation_steps": num_gradient_accumulation_steps,
-    "validation_metric": "+meta_dependencies_LAS",
+    "validation_metric": "",
     "optimizer": {
       "type": "huggingface_adamw",
       "lr": 3e-4,

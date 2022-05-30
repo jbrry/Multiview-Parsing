@@ -22,7 +22,8 @@ local reader_common = {
         "clean_text": true,
       }
     }
-  }
+  },
+  "use_dataset_embedding": true
 };
 
 {
@@ -49,23 +50,26 @@ local reader_common = {
     "multiple_heads_one_data_source": true,
     "desired_order_of_heads" : [],
     "allowed_arguments": {
-        "backbone": ["words"],
+        "backbone": ["words", "dataset_ids"],
         "TBID_PLACEHOLDER": ["encoded_text", "task", "mask", "upos", "metadata", "head_tags", "head_indices"],
         "multi_dependencies": ["encoded_text", "task", "mask", "upos", "metadata", "head_tags", "head_indices"],
         "meta_dependencies": ["other_module_inputs", "task", "mask", "upos", "metadata", "head_tags", "head_indices"]
     },
-
     "backbone": {
       "type": "transformer",
         "text_field_embedder": {
           "token_embedders": {
             "tokens": {
-              "type": "pretrained_transformer_mismatched",
+              "type": "pretrained_transformer_mismatched_dataset",
               "model_name": "",
-              "max_length": max_length
+              "max_length": max_length,
             }
           }
         },
+      "enc_dataset_embedding": {
+        "embedding_dim": transformer_dim,
+        "vocab_namespace": "dataset_ids"
+      },
       "dropout": 0.33,
       "input_dropout_word": 0.33,
     },
@@ -116,7 +120,8 @@ local reader_common = {
         "dropout": 0.33,
         "first_encoded_text_source": "dependencies_module_text",
         "second_encoded_text_source": "multi_dependencies_module_text",
-        "use_cross_stitch": false,
+	      "use_cross_stitch": false,
+        "task_heads" : []
       }
     }
   },

@@ -1,7 +1,7 @@
 local num_gpus = 1;
-local gpu_batch_size = 2;
+local gpu_batch_size = 8;
 local effective_batch_size = gpu_batch_size * num_gpus;
-local num_epochs = 2;
+local num_epochs = 50;
 local patience = 8;
 local num_gradient_accumulation_steps = 32 / effective_batch_size;
 local max_length = 128;
