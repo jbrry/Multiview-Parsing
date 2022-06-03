@@ -52,7 +52,8 @@ GROUP_TO_TBID_MAPPINGS = {
 }
 
 
-MODEL_TYPES = ["singleview", "singleview-concat", "multiview", "multiview-cross-stitch"]
+MODEL_TYPES = ["singleview", "singleview-concat", "singleview-concat-dataset-embeddings",
+                "multiview", "multiview-dataset-embeddings", "multiview-cross-stitch"]
 PT_MODEL_TYPES = ["mbert", "xlmr"]
 
 NO_DEV = ["gl_treegal", "la_perseus", "hsb_ufal", "sme_giella", "kmr_mg", "kk_ktb", "bxr_bdt", "sl_sst"]
@@ -67,6 +68,27 @@ for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
             GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type] = {}
 
 
+def set_scores(tbid):
+    """Sets the score for the tbid."""
+    
+    for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
+        if tbid in tbids:
+            if os.stat(filepath).st_size == 0:
+                if tbid in NO_DEV and args.mode == "dev":
+                    GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = "no-dev"
+                else:
+                    GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = 0. 
+            else:
+                with open(filepath, "r") as fi:
+                    for line in fi:
+                        items = line.split("|")
+                        if len(items) == 5:
+                            metric = items[METRIC].strip()
+                            if metric == "LAS":
+                                score = items[F1SCORE].strip()
+                                GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = score
+
+
 # check the results files
 for filename in os.listdir(args.result_dir):
     # only consider the eval files
@@ -75,7 +97,11 @@ for filename in os.listdir(args.result_dir):
         if "singleview" in filename:
             # single-view concat
             if "+" in filename:
-                model_type = "singleview-concat"
+                if "dataset_embeddings" in filename:
+                    model_type = "singleview-concat-dataset-embeddings"
+                else:
+                    model_type = "singleview-concat"
+                
                 filepath = os.path.join(args.result_dir, filename)
                 filename_short = os.path.splitext(filename)[0]
                 parts = filename_short.split("-")
@@ -86,22 +112,7 @@ for filename in os.listdir(args.result_dir):
                     pt_model_type = "xlmr"
 
                 tbid = parts[-4]
-                for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
-                    if tbid in tbids:
-                        if os.stat(filepath).st_size == 0:
-                            if tbid in NO_DEV and args.mode == "dev":
-                                GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = "no-dev"
-                            else:
-                                GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = 0. 
-                        else:
-                            with open(filepath, "r") as fi:
-                                for line in fi:
-                                    items = line.split("|")
-                                    if len(items) == 5:
-                                        metric = items[METRIC].strip()
-                                        if metric == "LAS":
-                                            score = items[F1SCORE].strip()
-                                            GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = score
+                set_scores(tbid)
             else:
                 model_type = "singleview"
                 filepath = os.path.join(args.result_dir, filename)
@@ -114,26 +125,13 @@ for filename in os.listdir(args.result_dir):
                     pt_model_type = "xlmr"
                 
                 tbid = parts[-5]
-                for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
-                    if tbid in tbids:
-                        if os.stat(filepath).st_size == 0:
-                            if tbid in NO_DEV and args.mode == "dev":
-                                GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = "no-dev" 
-                            else:
-                                GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = 0. 
-                        else:
-                            with open(filepath, "r") as fi:
-                                for line in fi:
-                                    items = line.split("|")
-                                    if len(items) == 5:
-                                        metric = items[METRIC].strip()
-                                        if metric == "LAS":
-                                            score = items[F1SCORE].strip()
-                                            GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = score
+                set_scores(tbid)
 
         elif "multiview" in filename:
             if "cross-stitch" in filename:
                 model_type = "multiview-cross-stitch"
+            elif "dataset_embeddings" in filename:
+                model_type = "multiview-dataset-embeddings"
             else:
                 model_type = "multiview"
             filepath = os.path.join(args.result_dir, filename)
@@ -146,35 +144,21 @@ for filename in os.listdir(args.result_dir):
                 pt_model_type = "xlmr"
             
             tbid = parts[-4]
+            set_scores(tbid)
 
-            for group, tbids in GROUP_TO_TBID_MAPPINGS.items():
-                if tbid in tbids:
-                    if os.stat(filepath).st_size == 0:
-                        if tbid in NO_DEV and args.mode == "dev":
-                            GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = "no-dev" 
-                        else:
-                            GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = 0.
-                    else:
-                        with open(filepath, "r") as fi:
-                            for line in fi:
-                                items = line.split("|")
-                                if len(items) == 5:
-                                    metric = items[METRIC].strip()
-                                    if metric == "LAS":
-                                        score = items[F1SCORE].strip()
-                                        GROUP_TO_TBID_RESULTS[group][model_type][pt_model_type][tbid] = score
 
 with open(f"results/insights-{args.mode}.csv", "w", newline="") as csvfile:
     fieldnames = ['group', 'tbid',
-                    'singleview-mbert', 'singleview-concat-mbert', 'multiview-mbert',
-                    'singleview-xlmr', 'singleview-concat-xlmr', 'multiview-xlmr', 'multiview-cross-stitch-xlmr']
+			'singleview-mbert', 'singleview-concat-mbert', 'multiview-mbert',
+			'singleview-xlmr', 'singleview-concat-xlmr', 'singleview-concat-dataset-embeddings-xlmr',
+			'multiview-xlmr', 'multiview-dataset-embeddings-xlmr', 'multiview-cross-stitch-xlmr']
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
 
     for group, model_types in GROUP_TO_TBID_RESULTS.items():
         tbids = sorted(GROUP_TO_TBID_MAPPINGS[group])
         for tbid in tbids:
-            
+
             # singleview
             try:
                 singleview_mbert_score = model_types["singleview"]["mbert"][tbid]
@@ -195,15 +179,29 @@ with open(f"results/insights-{args.mode}.csv", "w", newline="") as csvfile:
             except KeyError:
                 singleview_concat_xlmr_score = 0
 
+            # singleview-concat-dataset-embeddings
+            try:
+                singleview_concat_dataset_embeddings_xlmr_score = model_types["singleview-concat-dataset-embeddings"]["xlmr"][tbid]
+            except KeyError:
+                singleview_concat_dataset_embeddings_xlmr_score = 0
+
             # multiview
             try:
                 multiview_mbert_score = model_types["multiview"]["mbert"][tbid]
             except KeyError:
                 multiview_mbert_score = 0
+            
             try:
                 multiview_xlmr_score = model_types["multiview"]["xlmr"][tbid]
             except KeyError:
                 multiview_xlmr_score = 0
+            
+            # multiview-dataset-embeddings
+            try:
+                multiview_dataset_embeddings_xlmr_score = model_types["multiview-dataset-embeddings"]["xlmr"][tbid]
+            except KeyError:
+                multiview_dataset_embeddings_xlmr_score = 0            
+            
             try:
                 multiview_cross_stitch_xlmr_score = model_types["multiview-cross-stitch"]["xlmr"][tbid]
             except KeyError:
@@ -216,7 +214,9 @@ with open(f"results/insights-{args.mode}.csv", "w", newline="") as csvfile:
                             "multiview-mbert": multiview_mbert_score,
                             "singleview-xlmr": singleview_xlmr_score,
                             "singleview-concat-xlmr": singleview_concat_xlmr_score,
-                            "multiview-xlmr": multiview_xlmr_score,             
+                            "singleview-concat-dataset-embeddings-xlmr": singleview_concat_dataset_embeddings_xlmr_score,
+                            "multiview-xlmr": multiview_xlmr_score,
+                            "multiview-dataset-embeddings-xlmr": multiview_dataset_embeddings_xlmr_score,        
                             "multiview-cross-stitch-xlmr": multiview_cross_stitch_xlmr_score,             
                             })
  
